@@ -35,3 +35,8 @@ export {
 	type Model,
 } from "./use-providers"
 export type { ProviderData, UseProviderResult } from "./use-provider"
+export {
+	useFileSearch,
+	type UseFileSearchOptions,
+	type UseFileSearchResult,
+} from "./use-file-search"
