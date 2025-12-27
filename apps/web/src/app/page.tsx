@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { createClient, globalClient } from "@/core/client"
 import { NewSessionButton } from "./session/[id]/new-session-button"
+import { ThemeToggle } from "@/components/theme-toggle"
 
 interface Session {
 	id: string
@@ -153,6 +154,7 @@ export default async function Dashboard() {
 				{/* Header */}
 				<div className="flex items-center justify-between mb-8">
 					<h1 className="text-3xl font-bold text-foreground">Projects</h1>
+					<ThemeToggle />
 				</div>
 
 				{/* Projects with Sessions */}

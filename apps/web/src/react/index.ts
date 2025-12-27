@@ -20,9 +20,18 @@ export { useSession } from "./use-session"
 export { useCreateSession } from "./use-create-session"
 export { useProvider } from "./use-provider"
 export { useMessages } from "./use-messages"
-export type {
-	Provider,
-	Model,
-	ProviderData,
-	UseProviderResult,
-} from "./use-provider"
+export {
+	useSendMessage,
+	type UseSendMessageOptions,
+	type UseSendMessageReturn,
+	type ModelSelection,
+} from "./use-send-message"
+export { useSessionStatus, type SessionStatus } from "./use-session-status"
+export {
+	useProviders,
+	type UseProvidersOptions,
+	type UseProvidersReturn,
+	type Provider,
+	type Model,
+} from "./use-providers"
+export type { ProviderData, UseProviderResult } from "./use-provider"

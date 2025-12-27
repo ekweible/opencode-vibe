@@ -4,10 +4,12 @@
  * Client-side providers for the app
  *
  * Wraps the app with necessary context providers:
+ * - ThemeProvider: SSR-safe theme switching (next-themes)
  * - SSEProvider: Real-time event subscriptions
  */
 
 import type { ReactNode } from "react"
+import { ThemeProvider } from "next-themes"
 import { SSEProvider } from "@/react"
 import { OPENCODE_URL } from "@/core/client"
 
@@ -21,5 +23,9 @@ interface ProvidersProps {
  * Must be a client component to use context providers.
  */
 export function Providers({ children }: ProvidersProps) {
-	return <SSEProvider url={OPENCODE_URL}>{children}</SSEProvider>
+	return (
+		<ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+			<SSEProvider url={OPENCODE_URL}>{children}</SSEProvider>
+		</ThemeProvider>
+	)
 }

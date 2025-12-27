@@ -112,12 +112,31 @@ export const ToolOutput = ({ className, output, errorText, ...props }: ToolOutpu
 		return null
 	}
 
-	let Output = <div>{output as ReactNode}</div>
+	// Determine how to render output based on type
+	// IMPORTANT: Don't render raw output as ReactNode - it may contain strings
+	// that look like HTML tags (e.g., "array<decisiontrace") which breaks React
+	const renderOutput = () => {
+		if (output === undefined || output === null) {
+			return null
+		}
 
-	if (typeof output === "object" && !isValidElement(output)) {
-		Output = <CodeBlock code={JSON.stringify(output, null, 2)} language="json" />
-	} else if (typeof output === "string") {
-		Output = <CodeBlock code={output} language="json" />
+		// Already a React element - render as-is
+		if (isValidElement(output)) {
+			return output
+		}
+
+		// String - render in CodeBlock (safe, escapes HTML)
+		if (typeof output === "string") {
+			return <CodeBlock code={output} language="json" />
+		}
+
+		// Object/Array - JSON stringify into CodeBlock (safe)
+		if (typeof output === "object") {
+			return <CodeBlock code={JSON.stringify(output, null, 2)} language="json" />
+		}
+
+		// Primitive (number, boolean) - convert to string safely
+		return <CodeBlock code={String(output)} language="json" />
 	}
 
 	return (
@@ -132,7 +151,7 @@ export const ToolOutput = ({ className, output, errorText, ...props }: ToolOutpu
 				)}
 			>
 				{errorText && <div>{errorText}</div>}
-				{Output}
+				{renderOutput()}
 			</div>
 		</div>
 	)

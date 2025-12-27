@@ -22,8 +22,8 @@ export const metadata: Metadata = {
  * Root layout with Catppuccin theming
  *
  * Uses Latte (light) and Mocha (dark) variants.
- * Dark mode is controlled via the `dark` class on <html>.
- * SSEProvider wraps the app for real-time event subscriptions.
+ * Dark mode is controlled via ThemeProvider (next-themes).
+ * suppressHydrationWarning prevents mismatch between server/client theme rendering.
  */
 export default function RootLayout({
 	children,
@@ -31,7 +31,7 @@ export default function RootLayout({
 	children: React.ReactNode
 }>) {
 	return (
-		<html lang="en" className="dark" suppressHydrationWarning>
+		<html lang="en" suppressHydrationWarning>
 			<body
 				className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
 			>

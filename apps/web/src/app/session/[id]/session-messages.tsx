@@ -2,8 +2,7 @@
 
 import { Fragment, useEffect, useState, useRef, useCallback } from "react"
 import type { UIMessage, ChatStatus } from "ai"
-import { useSSE } from "@/react"
-import { createClient } from "@/core/client"
+import { useSSE, useSendMessage, type ModelSelection } from "@/react"
 import { transformMessages, type OpenCodeMessage } from "@/lib/transform-messages"
 import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message"
 import { Tool, ToolHeader, ToolContent, ToolInput, ToolOutput } from "@/components/ai-elements/tool"
@@ -20,9 +19,11 @@ import {
 	PromptInputTextarea,
 	PromptInputFooter,
 	PromptInputSubmit,
+	PromptInputTools,
 	type PromptInputMessage,
 } from "@/components/ai-elements/prompt-input"
 import { Loader } from "@/components/ai-elements/loader"
+import { ModelSelector } from "./model-selector"
 
 /**
  * SSE event payload shapes (from OpenCode API)
@@ -62,8 +63,14 @@ export function SessionMessages({ sessionId, directory, initialMessages }: Sessi
 	const [_rawMessages, setRawMessages] = useState<OpenCodeMessage[]>([])
 	const [messages, setMessages] = useState<UIMessage[]>(initialMessages)
 	const [input, setInput] = useState("")
+	const [selectedModel, setSelectedModel] = useState<ModelSelection | undefined>(undefined)
 	const [status, setStatus] = useState<ChatStatus>("ready")
 	const { subscribe } = useSSE()
+	const {
+		sendMessage,
+		isLoading: isSending,
+		error: sendError,
+	} = useSendMessage({ sessionId, directory })
 
 	// Buffer for parts that arrive before their parent message
 	const pendingPartsRef = useRef<Map<string, PartInfo[]>>(new Map())
@@ -242,18 +249,11 @@ export function SessionMessages({ sessionId, directory, initialMessages }: Sessi
 	const handleSubmit = async (message: PromptInputMessage) => {
 		if (!message.text?.trim() || status !== "ready") return
 
-		const text = message.text.trim()
 		setInput("")
 		setStatus("submitted")
 
 		try {
-			const client = createClient(directory)
-			await client.session.prompt({
-				path: { id: sessionId },
-				body: {
-					parts: [{ type: "text", text }],
-				},
-			})
+			await sendMessage(message.text, selectedModel)
 			// SSE will handle the response streaming
 		} catch (error) {
 			console.error("Failed to send message:", error)
@@ -262,6 +262,21 @@ export function SessionMessages({ sessionId, directory, initialMessages }: Sessi
 			setTimeout(() => setStatus("ready"), 2000)
 		}
 	}
+
+	// Sync local status with hook loading state
+	useEffect(() => {
+		if (isSending && status === "ready") {
+			setStatus("submitted")
+		}
+	}, [isSending, status])
+
+	// Handle send errors
+	useEffect(() => {
+		if (sendError) {
+			setStatus("error")
+			setTimeout(() => setStatus("ready"), 2000)
+		}
+	}, [sendError])
 
 	const isLoading = status === "submitted" || status === "streaming"
 
@@ -316,11 +331,20 @@ export function SessionMessages({ sessionId, directory, initialMessages }: Sessi
 												output?: unknown
 												errorText?: string
 											}
+
+											// Runtime sanitization - safety net for cached data with invalid chars
+											// Tool names with < > break React's createElement on Mobile Safari
+											// Use comprehensive sanitization - only allow valid element name chars
+											const safeType = toolPart.type.replace(
+												/[^a-zA-Z0-9\-_.]/g,
+												"_",
+											) as typeof toolPart.type
+
 											return (
 												<Tool key={partKey}>
 													<ToolHeader
-														title={toolPart.title || toolPart.type.replace("tool-", "")}
-														type={toolPart.type}
+														title={toolPart.title || safeType.replace("tool-", "")}
+														type={safeType}
 														state={toolPart.state}
 													/>
 													<ToolContent>
@@ -355,6 +379,13 @@ export function SessionMessages({ sessionId, directory, initialMessages }: Sessi
 							/>
 						</PromptInputBody>
 						<PromptInputFooter>
+							<PromptInputTools>
+								<ModelSelector
+									value={selectedModel}
+									onValueChange={setSelectedModel}
+									directory={directory}
+								/>
+							</PromptInputTools>
 							<PromptInputSubmit disabled={!input.trim() && status === "ready"} status={status} />
 						</PromptInputFooter>
 					</PromptInput>

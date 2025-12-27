@@ -9,6 +9,150 @@ import { ChevronLeftIcon, ChevronRightIcon, PaperclipIcon, XIcon } from "lucide-
 import type { ComponentProps, HTMLAttributes, ReactElement } from "react"
 import React, { createContext, memo, useContext, useEffect, useState } from "react"
 import { Streamdown } from "streamdown"
+import type { Root, Element } from "hast"
+import { visit } from "unist-util-visit"
+
+/**
+ * Valid HTML element names - anything else gets converted to span
+ */
+const VALID_HTML_ELEMENTS = new Set([
+	"a",
+	"abbr",
+	"address",
+	"area",
+	"article",
+	"aside",
+	"audio",
+	"b",
+	"base",
+	"bdi",
+	"bdo",
+	"blockquote",
+	"body",
+	"br",
+	"button",
+	"canvas",
+	"caption",
+	"cite",
+	"code",
+	"col",
+	"colgroup",
+	"data",
+	"datalist",
+	"dd",
+	"del",
+	"details",
+	"dfn",
+	"dialog",
+	"div",
+	"dl",
+	"dt",
+	"em",
+	"embed",
+	"fieldset",
+	"figcaption",
+	"figure",
+	"footer",
+	"form",
+	"h1",
+	"h2",
+	"h3",
+	"h4",
+	"h5",
+	"h6",
+	"head",
+	"header",
+	"hgroup",
+	"hr",
+	"html",
+	"i",
+	"iframe",
+	"img",
+	"input",
+	"ins",
+	"kbd",
+	"label",
+	"legend",
+	"li",
+	"link",
+	"main",
+	"map",
+	"mark",
+	"math",
+	"menu",
+	"meta",
+	"meter",
+	"nav",
+	"noscript",
+	"object",
+	"ol",
+	"optgroup",
+	"option",
+	"output",
+	"p",
+	"param",
+	"picture",
+	"pre",
+	"progress",
+	"q",
+	"rp",
+	"rt",
+	"ruby",
+	"s",
+	"samp",
+	"script",
+	"search",
+	"section",
+	"select",
+	"slot",
+	"small",
+	"source",
+	"span",
+	"strong",
+	"style",
+	"sub",
+	"summary",
+	"sup",
+	"svg",
+	"table",
+	"tbody",
+	"td",
+	"template",
+	"textarea",
+	"tfoot",
+	"th",
+	"thead",
+	"time",
+	"title",
+	"tr",
+	"track",
+	"u",
+	"ul",
+	"var",
+	"video",
+	"wbr",
+])
+
+/**
+ * Rehype plugin that converts unknown HTML tags to spans.
+ * This prevents React errors from tags like <thematic>, <package>, <array<T>>, etc.
+ * that appear in AI-generated markdown content.
+ */
+function rehypeSanitizeUnknownTags() {
+	return (tree: Root) => {
+		visit(tree, "element", (node: Element) => {
+			const tagName = node.tagName.toLowerCase()
+			if (!VALID_HTML_ELEMENTS.has(tagName)) {
+				// Convert unknown tag to span, preserve children
+				node.tagName = "span"
+				node.properties = {
+					...node.properties,
+					"data-original-tag": tagName,
+				}
+			}
+		})
+	}
+}
 
 export type MessageProps = HTMLAttributes<HTMLDivElement> & {
 	from: UIMessage["role"]
@@ -345,21 +489,151 @@ const TYPESCRIPT_LIKE_TAGS = new Set([
 ])
 
 /**
- * Check if a tag name looks like TypeScript syntax that was incorrectly parsed as HTML.
- * This includes single letters, TypeScript keywords, and tags with invalid characters.
+ * Set of valid HTML element names that should be rendered as-is.
+ * Any tag NOT in this set will be treated as a passthrough (rendered as fragment).
  */
-const isTypeScriptLikeTag = (tagName: string): boolean => {
+const VALID_HTML_TAGS = new Set([
+	// Document structure
+	"html",
+	"head",
+	"body",
+	"main",
+	"header",
+	"footer",
+	"nav",
+	"aside",
+	"section",
+	"article",
+	// Text content
+	"h1",
+	"h2",
+	"h3",
+	"h4",
+	"h5",
+	"h6",
+	"p",
+	"div",
+	"span",
+	"pre",
+	"code",
+	"blockquote",
+	"ul",
+	"ol",
+	"li",
+	"dl",
+	"dt",
+	"dd",
+	"figure",
+	"figcaption",
+	"hr",
+	"br",
+	"wbr",
+	// Inline text
+	"a",
+	"em",
+	"strong",
+	"b",
+	"i",
+	"u",
+	"s",
+	"mark",
+	"small",
+	"sub",
+	"sup",
+	"q",
+	"cite",
+	"abbr",
+	"time",
+	"kbd",
+	"samp",
+	"var",
+	"del",
+	"ins",
+	"dfn",
+	"ruby",
+	"rt",
+	"rp",
+	"bdi",
+	"bdo",
+	// Media
+	"img",
+	"picture",
+	"source",
+	"video",
+	"audio",
+	"track",
+	"iframe",
+	"embed",
+	"object",
+	"param",
+	"canvas",
+	"svg",
+	"math",
+	// Tables
+	"table",
+	"thead",
+	"tbody",
+	"tfoot",
+	"tr",
+	"th",
+	"td",
+	"caption",
+	"colgroup",
+	"col",
+	// Forms
+	"form",
+	"input",
+	"textarea",
+	"button",
+	"select",
+	"option",
+	"optgroup",
+	"label",
+	"fieldset",
+	"legend",
+	"datalist",
+	"output",
+	"progress",
+	"meter",
+	// Interactive
+	"details",
+	"summary",
+	"dialog",
+	"menu",
+	// Scripting
+	"script",
+	"noscript",
+	"template",
+	"slot",
+	// Other
+	"address",
+	"data",
+	"area",
+	"map",
+	"base",
+	"link",
+	"meta",
+	"style",
+	"title",
+])
+
+/**
+ * Check if a tag name is NOT a valid HTML element.
+ * Unknown tags (TypeScript syntax, tool names, etc.) should be rendered as fragments.
+ */
+const isUnknownTag = (tagName: string): boolean => {
 	const lower = tagName.toLowerCase()
-	// Check against known TypeScript-like tags
-	if (TYPESCRIPT_LIKE_TAGS.has(lower)) return true
-	// Single lowercase letter (common generic parameter)
-	if (/^[a-z]$/.test(tagName)) return true
-	// Contains characters invalid in HTML tag names (commas, angle brackets, etc.)
-	if (/[,<>()=:]/.test(tagName)) return true
-	// Starts with lowercase and contains only letters (likely a type name)
-	if (/^[a-z][a-z0-9]*$/i.test(tagName) && tagName.length <= 3) return true
-	return false
+	// If it's a known HTML tag, it's not unknown
+	if (VALID_HTML_TAGS.has(lower)) return false
+	// Everything else is unknown and should be a passthrough
+	return true
 }
+
+/**
+ * Legacy alias for backwards compatibility
+ * @deprecated Use isUnknownTag instead
+ */
+const isTypeScriptLikeTag = isUnknownTag
 
 /**
  * Filter props to only allow valid DOM attributes.
@@ -467,6 +741,21 @@ const streamdownComponents: Record<
 	"void,": FragmentPassthrough,
 	"unknown,": FragmentPassthrough,
 
+	// Common words that appear in tool outputs and get parsed as HTML tags
+	// These are NOT TypeScript types but appear in JSON/text content
+	thematic: FragmentPassthrough,
+	package: FragmentPassthrough,
+	repo: FragmentPassthrough,
+	request: FragmentPassthrough,
+	task: FragmentPassthrough,
+	error: FragmentPassthrough,
+	id: FragmentPassthrough,
+	from_search_result: FragmentPassthrough,
+	session_id: FragmentPassthrough,
+	// TypeScript generic syntax that gets parsed as tags
+	"array<decisiontrace": FragmentPassthrough,
+	"decisiontrace[]": FragmentPassthrough,
+
 	// Custom component tags - render as divs (block elements)
 	codeblocktabs: createPassthrough("codeblocktabs", true),
 	codeblocktabstrigger: createPassthrough("codeblocktabstrigger", true),
@@ -527,29 +816,41 @@ const getCachedPassthrough = (
 }
 
 /**
- * Proxy that catches any unknown HTML tags and renders them as spans.
+ * Create a Proxy that catches any unknown HTML tags and renders them as spans.
  * This handles TypeScript generics like <string,>, <Promise<T>>, etc.
  * that get incorrectly parsed as HTML tags from markdown content.
+ *
+ * IMPORTANT: We create a new Proxy for each render because spreading a Proxy
+ * into an object loses the Proxy behavior. The Proxy must wrap the final
+ * merged components object.
  */
-const componentsWithFallback = new Proxy(streamdownComponents, {
-	get(target, prop: string | symbol) {
-		// Ignore symbols (used by React internals)
-		if (typeof prop === "symbol") {
-			return undefined
-		}
-		if (prop in target) {
-			return target[prop as keyof typeof target]
-		}
-		// Return a cached passthrough component for any unknown tag
-		return getCachedPassthrough(prop)
-	},
-})
+const createComponentsWithFallback = (
+	additionalComponents?: Record<string, React.ComponentType<unknown>>,
+) => {
+	const baseComponents = { ...streamdownComponents, ...additionalComponents }
+	return new Proxy(baseComponents, {
+		get(target, prop: string | symbol) {
+			// Ignore symbols (used by React internals)
+			if (typeof prop === "symbol") {
+				return undefined
+			}
+			if (prop in target) {
+				return target[prop as keyof typeof target]
+			}
+			// Return a cached passthrough component for any unknown tag
+			return getCachedPassthrough(prop)
+		},
+	})
+}
 
 export const MessageResponse = memo(
 	({ className, components, ...props }: MessageResponseProps) => (
 		<Streamdown
 			className={cn("size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0", className)}
-			components={{ ...componentsWithFallback, ...components }}
+			components={createComponentsWithFallback(
+				components as Record<string, React.ComponentType<unknown>>,
+			)}
+			rehypePlugins={[rehypeSanitizeUnknownTags]}
 			{...props}
 		/>
 	),

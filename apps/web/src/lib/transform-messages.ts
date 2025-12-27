@@ -15,7 +15,33 @@ import type {
 	ToolState,
 	StepStartPart,
 } from "@opencode-ai/sdk/client"
-import type { UIMessage, UIMessagePart } from "ai"
+import type { UIMessage } from "ai"
+
+/**
+ * UIPart types for our transform layer
+ * We define these locally to avoid generic type complexity from the ai package
+ * These match the shapes expected by ai-elements components
+ */
+type TextUIPart = { type: "text"; text: string }
+type ReasoningUIPart = { type: "reasoning"; text: string }
+type FileUIPart = {
+	type: "file"
+	filename?: string
+	mediaType: string
+	url: string
+}
+type StepStartUIPart = { type: "step-start" }
+type ToolUIPart = {
+	type: `tool-${string}`
+	toolCallId: string
+	title?: string
+	state: "input-streaming" | "input-available" | "output-available" | "output-error"
+	input?: unknown
+	output?: unknown
+	errorText?: string
+}
+
+type SupportedUIPart = TextUIPart | ReasoningUIPart | FileUIPart | StepStartUIPart | ToolUIPart
 
 /**
  * OpenCode API returns messages as {info: Message, parts: Part[]}
@@ -48,20 +74,19 @@ function transformToolState(
 }
 
 /**
- * Transform individual part from OpenCode SDK to ai-elements UIPart
- *
- * Handles:
- * - TextPart → TextUIPart (direct)
- * - ReasoningPart → ReasoningUIPart (direct)
- * - FilePart → FileUIPart (mime → mediaType)
- * - ToolPart → ToolUIPart (state machine translation)
- * - StepStartPart → StepStartUIPart (direct)
- *
- * Ignored (return null):
- * - StepFinishPart, SnapshotPart, PatchPart, AgentPart, RetryPart, CompactionPart
- * These will need custom components later
+ * Sanitize a string for use as part of an HTML element name.
+ * Removes/replaces characters that are invalid in custom element names.
+ * Valid: letters, digits, hyphens, underscores, periods
+ * Invalid: < > & " ' / = spaces and most special chars
  */
-export function transformPart(part: Part): UIMessagePart | null {
+function sanitizeForElementName(name: string): string {
+	return name.replace(/[^a-zA-Z0-9\-_.]/g, "_")
+}
+
+/**
+ * Transform individual part from OpenCode SDK to ai-elements UIPart
+ */
+export function transformPart(part: Part): SupportedUIPart | null {
 	switch (part.type) {
 		case "text": {
 			const textPart = part as TextPart
@@ -93,9 +118,12 @@ export function transformPart(part: Part): UIMessagePart | null {
 			const toolPart = part as ToolPart
 			const state = transformToolState(toolPart.state)
 
+			// Sanitize tool name - can contain invalid chars like < >
+			const sanitizedToolName = sanitizeForElementName(toolPart.tool)
+
 			// Base tool UIPart structure
 			const baseTool = {
-				type: `tool-${toolPart.tool}` as const,
+				type: `tool-${sanitizedToolName}` as const,
 				toolCallId: toolPart.callID,
 				title: "title" in toolPart.state ? toolPart.state.title : toolPart.tool,
 			}
@@ -136,15 +164,12 @@ export function transformPart(part: Part): UIMessagePart | null {
 		}
 
 		case "step-start": {
-			const stepPart = part as StepStartPart
 			return {
 				type: "step-start",
-				snapshot: stepPart.snapshot,
 			}
 		}
 
 		// OpenCode-specific parts that need custom components
-		// For now, return null to filter them out
 		case "step-finish":
 		case "snapshot":
 		case "patch":
@@ -154,29 +179,22 @@ export function transformPart(part: Part): UIMessagePart | null {
 			return null
 
 		default:
-			// Unknown part type - return null to filter out
 			return null
 	}
 }
 
 /**
  * Transform OpenCode message envelope to ai-elements UIMessage
- *
- * Unwraps {info, parts} structure and maps to flat UIMessage format:
- * - info.id → id
- * - info.role → role
- * - parts[] → parts[] (filtered and transformed)
  */
 export function transformMessage(opencodeMsg: OpenCodeMessage): UIMessage {
-	// Transform and filter parts (remove nulls from unsupported types)
 	const transformedParts = opencodeMsg.parts
 		.map(transformPart)
-		.filter((part): part is UIMessagePart => part !== null)
+		.filter((part): part is SupportedUIPart => part !== null)
 
 	return {
 		id: opencodeMsg.info.id,
 		role: opencodeMsg.info.role,
-		parts: transformedParts,
+		parts: transformedParts as UIMessage["parts"],
 	}
 }
 
