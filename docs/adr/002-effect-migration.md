@@ -1,4 +1,4 @@
-# ADR 002: @opencode/router - Effect-Powered Async Router
+# ADR 002: @/core/router - Effect-Powered Async Router
 
 **Status:** Approved  
 **Date:** 2025-12-29
@@ -7,7 +7,7 @@
 
 ## TL;DR
 
-Build `@opencode/router` - a type-safe router where handlers are async/await, config is declarative, and Effect runs invisibly underneath. Steal the UploadThing pattern wholesale.
+Build `@/core/router` - a type-safe router where handlers are async/await, config is declarative, and Effect runs invisibly underneath. Steal the UploadThing pattern wholesale.
 
 ```typescript
 const o = createOpencodeRoute();
@@ -105,34 +105,33 @@ type RouteConfig = {
 
 ---
 
-## Package Structure
+## Directory Structure
 
-```
-packages/router/
-├── src/
-│   ├── builder.ts          # createOpencodeRoute() fluent API
-│   ├── router.ts           # createRouter(), route resolution
-│   ├── executor.ts         # Effect execution engine
-│   ├── stream.ts           # Streaming + heartbeat support
-│   ├── errors.ts           # Typed error classes
-│   ├── runtime.ts          # ManagedRuntime setup
-│   ├── schedule.ts         # Retry schedule builders
-│   ├── adapters/
-│   │   ├── next.ts         # createNextHandler(), createAction()
-│   │   └── direct.ts       # createCaller()
-│   ├── types.ts            # Public types
-│   └── index.ts            # Public exports
-├── effect.ts               # @opencode/router/effect escape hatch
-├── package.json
-└── tsconfig.json
+**This is a flat repo, not a monorepo.** Router lives in `apps/web/src/core/router/`.
 
-packages/router-react/
-├── src/
-│   ├── use-subscription.ts # Streaming hook with visibility API
-│   ├── use-query.ts        # Request-response hook
-│   └── index.ts
-└── package.json
+```text
+apps/web/src/core/router/
+├── builder.ts          # createOpencodeRoute() fluent API
+├── router.ts           # createRouter(), route resolution
+├── executor.ts         # Effect execution engine
+├── stream.ts           # Streaming + heartbeat support
+├── errors.ts           # Typed error classes
+├── runtime.ts          # ManagedRuntime setup
+├── schedule.ts         # Retry schedule builders
+├── adapters/
+│   ├── next.ts         # createNextHandler(), createAction()
+│   └── direct.ts       # createCaller()
+├── types.ts            # Public types
+└── index.ts            # Public exports
+
+apps/web/src/react/
+├── use-subscription.ts # Streaming hook with visibility API (new)
+├── use-query.ts        # Request-response hook (new)
+└── ...existing hooks
 ```
+
+**Worktree:** `/Users/joel/Code/joelhooks/opencode-router-worktree`
+**Branch:** `feature/effect-router`
 
 ---
 
@@ -644,7 +643,7 @@ export function useSubscription<T>(
 
 ```typescript
 // apps/web/src/server/router.ts
-import { createOpencodeRoute, createRouter } from "@opencode/router";
+import { createOpencodeRoute, createRouter } from "@/core/router";
 import { z } from "zod";
 
 const o = createOpencodeRoute();
@@ -781,20 +780,17 @@ After router is built, migrate in this order:
 
 ## Dependencies
 
+Add to `apps/web/package.json`:
+
 ```json
 {
-  "name": "@opencode/router",
   "dependencies": {
     "effect": "^3.12.0"
-  },
-  "peerDependencies": {
-    "zod": "^3.22.0",
-    "next": ">=15.0.0"
   }
 }
 ```
 
-Note: Using Effect 3.12+ (Schema is now in core `effect` package, not separate `@effect/schema`).
+Note: Using Effect 3.12+ (Schema is now in core `effect` package, not separate `@effect/schema`). Zod and Next.js are already dependencies.
 
 ---
 
@@ -802,7 +798,7 @@ Note: Using Effect 3.12+ (Schema is now in core `effect` package, not separate `
 
 ```typescript
 // Test routes by mocking handlers, not Effect internals
-import { createTestCaller } from "@opencode/router/test";
+import { createTestCaller } from "@/core/router/test";
 
 describe("session.get", () => {
   it("returns session by id", async () => {
@@ -890,10 +886,10 @@ describe("subscribe.events", () => {
 For cases where the router abstraction is too limiting:
 
 ```typescript
-// @opencode/router/effect
+// Direct Effect imports for escape hatch
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
-import { RouterEnv } from "@opencode/router";
+import { RouterEnv } from "@/core/router/runtime";
 
 // Direct Effect access for power users
 export const customRoute = o({ timeout: "30s" }).handler(async ({ sdk }) => {
