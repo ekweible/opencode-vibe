@@ -8,6 +8,7 @@ import { OpenCodeProvider, useSession, useMessages, useSendMessage, useOpenCode 
 import { useOpencodeStore } from "@/react/store"
 import { useMultiServerSSE } from "@/react/use-multi-server-sse"
 import { useSessionStatus } from "@/react/use-session-status"
+import { useSubagentSync } from "@/react/use-subagent-sync"
 import { NewSessionButton } from "./new-session-button"
 import { SessionMessages } from "./session-messages"
 import { PromptInput } from "@/components/prompt"
@@ -114,6 +115,10 @@ function SessionContent({
 
 	// Subscribe to SSE events from all OpenCode servers
 	useMultiServerSSE()
+
+	// Subscribe to subagent SSE events for this session
+	// This enables real-time tracking of child sessions spawned via Task tool
+	useSubagentSync(sessionId)
 
 	// Hydrate store with initial session data on mount
 	useEffect(() => {

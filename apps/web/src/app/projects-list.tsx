@@ -11,13 +11,11 @@
 import { useEffect, useRef, useMemo, memo } from "react"
 import Link from "next/link"
 import { motion, AnimatePresence } from "framer-motion"
-import { useOpencodeStore } from "@/react/store"
-import { useShallow } from "zustand/react/shallow"
+import { useOpencodeStore, type SessionStatus } from "@/react/store"
 import { useSSE } from "@/react/use-sse"
 import { useMultiServerSSE } from "@/react/use-multi-server-sse"
 import { useLiveTime } from "@/react/use-live-time"
 import { createClient } from "@/core/client"
-import type { SessionStatus } from "@/react/store"
 
 interface SessionDisplay {
 	id: string
@@ -126,18 +124,20 @@ const SessionRow = memo(
 	},
 )
 
+// Empty objects for stable references when directory data doesn't exist
+const EMPTY_STATUS: Record<string, SessionStatus> = {}
+const EMPTY_ACTIVITY: Record<string, number> = {}
+
 /**
  * Hook to get sorted sessions for a project
  * Sorts by: running sessions first, then by last activity timestamp
  */
 function useSortedSessions(sessions: SessionDisplay[], directory: string) {
-	// Combine both selectors into single subscription to avoid cascade re-renders
-	const { sessionStatuses, lastActivity } = useOpencodeStore(
-		useShallow((state) => ({
-			sessionStatuses: state.directories[directory]?.sessionStatus ?? {},
-			lastActivity: state.directories[directory]?.sessionLastActivity ?? {},
-		})),
-	)
+	// Select raw values first, then derive - avoids creating new objects in selector
+	const sessionStatuses =
+		useOpencodeStore((state) => state.directories[directory]?.sessionStatus) ?? EMPTY_STATUS
+	const lastActivity =
+		useOpencodeStore((state) => state.directories[directory]?.sessionLastActivity) ?? EMPTY_ACTIVITY
 
 	return useMemo(() => {
 		return [...sessions].sort((a, b) => {

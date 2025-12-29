@@ -18,6 +18,8 @@ import React, { type ComponentProps, type ReactNode } from "react"
 import { useState, isValidElement } from "react"
 import { CodeBlock } from "./code-block"
 import { SubagentCurrentActivity } from "./task"
+import { SubagentView } from "./subagent-view"
+import { useSubagent } from "@/react/use-subagent"
 
 /**
  * Extract contextual information from tool inputs and state for display in 3-line card.
@@ -248,6 +250,82 @@ type ToolCardProps = ComponentProps<typeof Collapsible> & {
 	toolPart: ToolPart
 }
 
+/**
+ * Task tool card with subagent view integration.
+ * Uses useSubagent hook to get child session data and renders SubagentView when expanded.
+ */
+const TaskToolCard = ({ toolPart, className, ...props }: ToolCardProps) => {
+	const { state } = toolPart
+	const { primary } = getToolContextLines(toolPart)
+	const { subagent, isExpanded, toggleExpanded, hasSubagent, isRunning } = useSubagent(toolPart.id)
+
+	// Task tools are always expandable if they have a subagent
+	const canExpand = hasSubagent || hasExpandableContent(state)
+
+	return (
+		<div className={cn("not-prose w-full rounded-md border-[0.5px] border-surface1", className)}>
+			{/* Header - clickable to expand */}
+			<button
+				type="button"
+				onClick={toggleExpanded}
+				className="flex w-full flex-col gap-1 p-3 text-left hover:bg-muted/50 transition-colors"
+			>
+				{/* Line 1: Tool name + status */}
+				<div className="flex w-full items-center justify-between gap-2">
+					<div className="flex items-center gap-2 min-w-0 flex-1">
+						<WrenchIcon className="size-4 shrink-0 text-muted-foreground" />
+						<span className="font-medium text-sm capitalize truncate">task</span>
+					</div>
+					<motion.div
+						key={state.status}
+						initial={{ scale: 0.9, opacity: 0 }}
+						animate={{ scale: 1, opacity: 1 }}
+						transition={{ duration: 0.15, ease: "easeOut" }}
+						className="flex items-center gap-2 shrink-0"
+					>
+						{getStatusIcon(state)}
+					</motion.div>
+				</div>
+
+				{/* Line 2: Primary context (description) */}
+				{primary && (
+					<div className="text-foreground text-sm truncate pl-6" title={primary}>
+						{primary}
+					</div>
+				)}
+
+				{/* Line 3: Current activity + chevron */}
+				<div className="flex items-center justify-between gap-2 pl-6">
+					<SubagentCurrentActivity part={toolPart} className="flex-1 min-w-0" />
+					{canExpand && (
+						<motion.div
+							animate={{ rotate: isExpanded ? 180 : 0 }}
+							transition={{ duration: 0.15, ease: "easeOut" }}
+						>
+							<ChevronDownIcon className="size-4 shrink-0 text-muted-foreground" />
+						</motion.div>
+					)}
+				</div>
+			</button>
+
+			{/* Expanded content - SubagentView with full child session */}
+			<AnimatePresence>
+				{isExpanded && subagent && (
+					<motion.div
+						initial={{ height: 0, opacity: 0 }}
+						animate={{ height: "auto", opacity: 1 }}
+						exit={{ height: 0, opacity: 0 }}
+						transition={{ duration: 0.2, ease: "easeOut" }}
+						style={{ overflow: "hidden" }}
+					>
+						<SubagentView subagent={subagent} />
+					</motion.div>
+				)}
+			</AnimatePresence>
+		</div>
+	)
+}
+
 const ToolCardComponent = ({ toolPart, className, ...props }: ToolCardProps) => {
 	const { tool, state } = toolPart
 	const { primary, secondary } = getToolContextLines(toolPart)
@@ -255,6 +333,11 @@ const ToolCardComponent = ({ toolPart, className, ...props }: ToolCardProps) => 
 	const error = "error" in state ? state.error : undefined
 	const canExpand = hasExpandableContent(state)
 	const [isOpen, setIsOpen] = useState(false)
+
+	// Task tools get special handling with SubagentView
+	if (tool === "task") {
+		return <TaskToolCard toolPart={toolPart} className={className} {...props} />
+	}
 
 	// If no expandable content, render as static card
 	if (!canExpand) {
@@ -287,13 +370,7 @@ const ToolCardComponent = ({ toolPart, className, ...props }: ToolCardProps) => 
 
 					{/* Line 3: Secondary context (no chevron) */}
 					<div className="flex items-center justify-between gap-2 pl-6">
-						{tool === "task" ? (
-							<SubagentCurrentActivity part={toolPart} className="flex-1 min-w-0" />
-						) : (
-							<span className="text-muted-foreground text-xs truncate">
-								{secondary || "\u00A0"}
-							</span>
-						)}
+						<span className="text-muted-foreground text-xs truncate">{secondary || "\u00A0"}</span>
 					</div>
 				</div>
 			</div>
@@ -335,11 +412,7 @@ const ToolCardComponent = ({ toolPart, className, ...props }: ToolCardProps) => 
 
 				{/* Line 3: Secondary context + chevron */}
 				<div className="flex items-center justify-between gap-2 pl-6">
-					{tool === "task" ? (
-						<SubagentCurrentActivity part={toolPart} className="flex-1 min-w-0" />
-					) : (
-						<span className="text-muted-foreground text-xs truncate">{secondary || "\u00A0"}</span>
-					)}
+					<span className="text-muted-foreground text-xs truncate">{secondary || "\u00A0"}</span>
 					<motion.div
 						animate={{ rotate: isOpen ? 180 : 0 }}
 						transition={{ duration: 0.15, ease: "easeOut" }}

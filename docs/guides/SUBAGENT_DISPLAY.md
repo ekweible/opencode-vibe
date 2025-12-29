@@ -115,7 +115,7 @@ Subscribe to child session events and render them inline or in an expandable pan
 │                                                                     │
 │  2. Task tool creates child session                                 │
 │     └─► Session.create({ parentID: parentSessionID })               │
-│     └─► Child session ID stored in ToolPart.metadata.sessionId      │
+│     └─► Child session ID stored in ToolPart.metadata.sessionID      │
 │                                                                     │
 │  3. Task tool subscribes to child session events                    │
 │     └─► Listens for message.part.updated in child                   │
@@ -136,7 +136,7 @@ Subscribe to child session events and render them inline or in an expandable pan
 
 The child session is a **full session** with its own messages, parts, and events. The parent only sees a summary via `ToolPart.metadata.summary`. To show real-time subagent progress, you must:
 
-1. Detect when a Task tool starts (has `metadata.sessionId`)
+1. Detect when a Task tool starts (has `metadata.sessionID` - note uppercase D)
 2. Subscribe to the child session's events
 3. Render child session content inline or in an expandable panel
 
@@ -168,7 +168,7 @@ interface ToolPart {
 
 // When tool is "task", state.metadata contains:
 interface TaskToolMetadata {
-  sessionId: string; // Child session ID - THE KEY!
+  sessionID: string; // Child session ID - THE KEY! (uppercase D)
   summary: TaskSummaryItem[]; // Collapsed view of child tools
 }
 
@@ -201,7 +201,7 @@ interface ToolStateRunning {
   status: "running";
   input: Record<string, unknown>;
   title?: string;
-  metadata?: TaskToolMetadata; // Contains sessionId for task tools
+  metadata?: TaskToolMetadata; // Contains sessionID for task tools
   time: { start: number };
 }
 
@@ -210,7 +210,7 @@ interface ToolStateCompleted {
   input: Record<string, unknown>;
   output: string;
   title: string;
-  metadata: TaskToolMetadata; // Contains sessionId + summary
+  metadata: TaskToolMetadata; // Contains sessionID + summary
   time: { start: number; end: number };
 }
 
@@ -330,13 +330,13 @@ function isChildSession(session: Session, parentId: string): boolean {
 }
 
 function isTaskToolWithSession(part: Part): part is ToolPart & {
-  state: { metadata: { sessionId: string } };
+  state: { metadata: { sessionID: string } };
 } {
   return (
     part.type === "tool" &&
     part.tool === "task" &&
     "metadata" in part.state &&
-    typeof part.state.metadata?.sessionId === "string"
+    typeof part.state.metadata?.sessionID === "string"
   );
 }
 ```

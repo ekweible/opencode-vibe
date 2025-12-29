@@ -1,8 +1,21 @@
 import { useCallback, useState, useRef, useEffect } from "react"
-import type { Prompt } from "@/types/prompt"
+import type { Prompt, SlashCommand } from "@/types/prompt"
 import { convertToApiParts } from "@/lib/prompt-api"
 import { useSessionStatus } from "./use-session-status"
 import { useOpenCode } from "./provider"
+import { useCommands } from "./use-commands"
+
+/**
+ * Result of parsing a prompt for slash commands
+ */
+type ParsedCommand =
+	| { isCommand: false }
+	| {
+			isCommand: true
+			commandName: string
+			arguments: string
+			type: SlashCommand["type"]
+	  }
 
 export interface ModelSelection {
 	providerID: string
@@ -78,6 +91,52 @@ export function useSendMessage({
 	// Get caller from provider context
 	const { caller } = useOpenCode()
 
+	// Get command registry for slash command detection
+	const { findCommand } = useCommands()
+
+	/**
+	 * Parse prompt parts to detect slash commands.
+	 * Only text parts are checked - file/image parts are ignored.
+	 *
+	 * @param parts - The prompt parts to parse
+	 * @returns ParsedCommand indicating if this is a command and its details
+	 */
+	const parseSlashCommand = useCallback(
+		(parts: Prompt): ParsedCommand => {
+			// Extract text content only (ignore file/image parts)
+			const text = parts
+				.filter((p): p is Extract<typeof p, { type: "text" }> => p.type === "text")
+				.map((p) => p.content)
+				.join("")
+				.trim()
+
+			// Not a command if doesn't start with /
+			if (!text.startsWith("/")) {
+				return { isCommand: false }
+			}
+
+			// Parse command name and arguments
+			const [cmdPart = "", ...argParts] = text.split(" ")
+			const commandName = cmdPart.slice(1) // Remove leading /
+			const args = argParts.join(" ")
+
+			// Look up command in registry
+			const command = findCommand(commandName)
+			if (!command) {
+				// Unknown command - treat as regular prompt
+				return { isCommand: false }
+			}
+
+			return {
+				isCommand: true,
+				commandName,
+				arguments: args,
+				type: command.type,
+			}
+		},
+		[findCommand],
+	)
+
 	// Queue for pending messages
 	const queueRef = useRef<QueuedMessage[]>([])
 	const isProcessingRef = useRef(false)
@@ -88,19 +147,41 @@ export function useSendMessage({
 	const { running } = useSessionStatus(sessionId)
 
 	/**
-	 * Process a single message via router caller
+	 * Process a single message via router caller.
+	 *
+	 * Routes messages based on content:
+	 * - Custom slash commands → session.command route
+	 * - Builtin slash commands → skip (handled client-side)
+	 * - Regular prompts → session.promptAsync route
 	 *
 	 * NOTE: Caller uses the SDK client from context which picks up the latest
 	 * server discovery from multiServerSSE. The session→port mapping
 	 * updates dynamically as we receive SSE events.
+	 *
+	 * @returns true if message was processed, false if skipped (builtin command)
 	 */
 	const processMessage = useCallback(
-		async (parts: Prompt, model?: ModelSelection) => {
-			// Convert client parts to API format
+		async (parts: Prompt, model?: ModelSelection): Promise<boolean> => {
+			// Check if this is a slash command
+			const parsed = parseSlashCommand(parts)
+
+			if (parsed.isCommand) {
+				if (parsed.type === "custom") {
+					// Custom command - route to session.command
+					await caller("session.command", {
+						sessionId,
+						command: parsed.commandName,
+						arguments: parsed.arguments,
+					})
+					return true
+				}
+				// Builtin command - skip, handled client-side
+				return false
+			}
+
+			// Regular prompt - convert and send via session.promptAsync
 			const apiParts = convertToApiParts(parts, directory || "")
 
-			// Invoke session.promptAsync route via caller
-			// Returns void (fire-and-forget), SSE events will notify when complete
 			await caller("session.promptAsync", {
 				sessionId,
 				parts: apiParts,
@@ -111,8 +192,9 @@ export function useSendMessage({
 						}
 					: undefined,
 			})
+			return true
 		},
-		[sessionId, directory, caller],
+		[sessionId, directory, caller, parseSlashCommand],
 	)
 
 	// Process next message from queue if session is idle

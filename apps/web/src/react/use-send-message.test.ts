@@ -27,6 +27,16 @@ mock.module("./use-session-status", () => ({
 	useSessionStatus: mock(() => ({ running: false, isLoading: false })),
 }))
 
+// Mock useCommands to return no commands by default (regular prompts pass through)
+mock.module("./use-commands", () => ({
+	useCommands: mock(() => ({
+		commands: [],
+		findCommand: mock(() => undefined),
+		loading: false,
+		error: null,
+	})),
+}))
+
 describe("useSendMessage", () => {
 	beforeEach(() => {
 		mock.restore()
@@ -51,6 +61,14 @@ describe("useSendMessage", () => {
 				directory: "/test",
 				ready: true,
 				sync: mock(async () => {}),
+			})),
+		}))
+		mock.module("./use-commands", () => ({
+			useCommands: mock(() => ({
+				commands: [],
+				findCommand: mock(() => undefined),
+				loading: false,
+				error: null,
 			})),
 		}))
 
@@ -168,6 +186,14 @@ describe("useSendMessage", () => {
 				sync: mock(async () => {}),
 			})),
 		}))
+		mock.module("./use-commands", () => ({
+			useCommands: mock(() => ({
+				commands: [],
+				findCommand: mock(() => undefined),
+				loading: false,
+				error: null,
+			})),
+		}))
 
 		const { result } = renderHook(() => useSendMessage({ sessionId: "ses_123" }))
 
@@ -186,6 +212,14 @@ describe("useSendMessage", () => {
 				directory: "/test",
 				ready: true,
 				sync: mock(async () => {}),
+			})),
+		}))
+		mock.module("./use-commands", () => ({
+			useCommands: mock(() => ({
+				commands: [],
+				findCommand: mock(() => undefined),
+				loading: false,
+				error: null,
 			})),
 		}))
 
@@ -500,6 +534,15 @@ describe("useSendMessage", () => {
 			useSessionStatus: mock(() => ({ running: false, isLoading: false })),
 		}))
 
+		mock.module("./use-commands", () => ({
+			useCommands: mock(() => ({
+				commands: [],
+				findCommand: mock(() => undefined),
+				loading: false,
+				error: null,
+			})),
+		}))
+
 		const { result } = renderHook(() =>
 			useSendMessage({ sessionId: "ses_123", directory: "/test" }),
 		)
@@ -548,5 +591,379 @@ describe("useSendMessage", () => {
 
 		// All three should process in order
 		await waitFor(() => expect(callOrder).toEqual(["first", "second", "third"]))
+	})
+
+	// ═══════════════════════════════════════════════════════════════
+	// SLASH COMMAND DETECTION AND ROUTING TESTS
+	// ═══════════════════════════════════════════════════════════════
+
+	test("routes custom slash commands to session.command route", async () => {
+		const mockCaller = mock(async () => undefined)
+		mock.module("./provider", () => ({
+			useOpenCode: mock(() => ({
+				caller: mockCaller,
+				url: "http://localhost:3000",
+				directory: "/test",
+				ready: true,
+				sync: mock(async () => {}),
+			})),
+		}))
+
+		// Mock useCommands to return a custom command
+		mock.module("./use-commands", () => ({
+			useCommands: mock(() => ({
+				commands: [
+					{
+						id: "custom.review",
+						trigger: "review",
+						title: "Review",
+						type: "custom",
+					},
+				],
+				findCommand: mock((trigger: string) =>
+					trigger === "review"
+						? {
+								id: "custom.review",
+								trigger: "review",
+								title: "Review",
+								type: "custom",
+							}
+						: undefined,
+				),
+				loading: false,
+				error: null,
+			})),
+		}))
+
+		mock.module("./use-session-status", () => ({
+			useSessionStatus: mock(() => ({ running: false, isLoading: false })),
+		}))
+
+		const { result } = renderHook(() =>
+			useSendMessage({ sessionId: "ses_123", directory: "/test" }),
+		)
+
+		// Send a custom slash command
+		const parts: Prompt = [{ type: "text", content: "/review fix the bug", start: 0, end: 19 }]
+		await result.current.sendMessage(parts)
+
+		// Should call session.command, NOT session.promptAsync
+		expect(mockCaller).toHaveBeenCalledTimes(1)
+		expect(mockCaller).toHaveBeenCalledWith("session.command", {
+			sessionId: "ses_123",
+			command: "review",
+			arguments: "fix the bug",
+		})
+	})
+
+	test("skips builtin slash commands (handled client-side)", async () => {
+		const mockCaller = mock(async () => undefined)
+		mock.module("./provider", () => ({
+			useOpenCode: mock(() => ({
+				caller: mockCaller,
+				url: "http://localhost:3000",
+				directory: "/test",
+				ready: true,
+				sync: mock(async () => {}),
+			})),
+		}))
+
+		// Mock useCommands to return a builtin command
+		mock.module("./use-commands", () => ({
+			useCommands: mock(() => ({
+				commands: [
+					{
+						id: "session.new",
+						trigger: "new",
+						title: "New Session",
+						type: "builtin",
+					},
+				],
+				findCommand: mock((trigger: string) =>
+					trigger === "new"
+						? {
+								id: "session.new",
+								trigger: "new",
+								title: "New Session",
+								type: "builtin",
+							}
+						: undefined,
+				),
+				loading: false,
+				error: null,
+			})),
+		}))
+
+		mock.module("./use-session-status", () => ({
+			useSessionStatus: mock(() => ({ running: false, isLoading: false })),
+		}))
+
+		const { result } = renderHook(() =>
+			useSendMessage({ sessionId: "ses_123", directory: "/test" }),
+		)
+
+		// Send a builtin slash command
+		const parts: Prompt = [{ type: "text", content: "/new", start: 0, end: 4 }]
+		await result.current.sendMessage(parts)
+
+		// Should NOT call any route - builtin commands are handled client-side
+		expect(mockCaller).toHaveBeenCalledTimes(0)
+	})
+
+	test("sends unknown /commands as regular prompts", async () => {
+		const mockCaller = mock(async () => undefined)
+		mock.module("./provider", () => ({
+			useOpenCode: mock(() => ({
+				caller: mockCaller,
+				url: "http://localhost:3000",
+				directory: "/test",
+				ready: true,
+				sync: mock(async () => {}),
+			})),
+		}))
+
+		// Mock useCommands to return no matching command
+		mock.module("./use-commands", () => ({
+			useCommands: mock(() => ({
+				commands: [],
+				findCommand: mock(() => undefined),
+				loading: false,
+				error: null,
+			})),
+		}))
+
+		mock.module("./use-session-status", () => ({
+			useSessionStatus: mock(() => ({ running: false, isLoading: false })),
+		}))
+
+		const { result } = renderHook(() =>
+			useSendMessage({ sessionId: "ses_123", directory: "/test" }),
+		)
+
+		// Send an unknown slash command
+		const parts: Prompt = [{ type: "text", content: "/unknowncommand arg", start: 0, end: 19 }]
+		await result.current.sendMessage(parts)
+
+		// Should call session.promptAsync as a regular prompt
+		expect(mockCaller).toHaveBeenCalledTimes(1)
+		expect(mockCaller).toHaveBeenCalledWith(
+			"session.promptAsync",
+			expect.objectContaining({
+				sessionId: "ses_123",
+			}),
+		)
+	})
+
+	test("sends regular text as prompts (not starting with /)", async () => {
+		const mockCaller = mock(async () => undefined)
+		mock.module("./provider", () => ({
+			useOpenCode: mock(() => ({
+				caller: mockCaller,
+				url: "http://localhost:3000",
+				directory: "/test",
+				ready: true,
+				sync: mock(async () => {}),
+			})),
+		}))
+
+		mock.module("./use-commands", () => ({
+			useCommands: mock(() => ({
+				commands: [],
+				findCommand: mock(() => undefined),
+				loading: false,
+				error: null,
+			})),
+		}))
+
+		mock.module("./use-session-status", () => ({
+			useSessionStatus: mock(() => ({ running: false, isLoading: false })),
+		}))
+
+		const { result } = renderHook(() =>
+			useSendMessage({ sessionId: "ses_123", directory: "/test" }),
+		)
+
+		// Send regular text
+		const parts: Prompt = [{ type: "text", content: "Fix the bug please", start: 0, end: 18 }]
+		await result.current.sendMessage(parts)
+
+		// Should call session.promptAsync
+		expect(mockCaller).toHaveBeenCalledTimes(1)
+		expect(mockCaller).toHaveBeenCalledWith(
+			"session.promptAsync",
+			expect.objectContaining({
+				sessionId: "ses_123",
+			}),
+		)
+	})
+
+	test("extracts command arguments correctly", async () => {
+		const mockCaller = mock(async () => undefined)
+		mock.module("./provider", () => ({
+			useOpenCode: mock(() => ({
+				caller: mockCaller,
+				url: "http://localhost:3000",
+				directory: "/test",
+				ready: true,
+				sync: mock(async () => {}),
+			})),
+		}))
+
+		mock.module("./use-commands", () => ({
+			useCommands: mock(() => ({
+				commands: [
+					{
+						id: "custom.debug",
+						trigger: "debug",
+						title: "Debug",
+						type: "custom",
+					},
+				],
+				findCommand: mock((trigger: string) =>
+					trigger === "debug"
+						? {
+								id: "custom.debug",
+								trigger: "debug",
+								title: "Debug",
+								type: "custom",
+							}
+						: undefined,
+				),
+				loading: false,
+				error: null,
+			})),
+		}))
+
+		mock.module("./use-session-status", () => ({
+			useSessionStatus: mock(() => ({ running: false, isLoading: false })),
+		}))
+
+		const { result } = renderHook(() =>
+			useSendMessage({ sessionId: "ses_123", directory: "/test" }),
+		)
+
+		// Send command with multi-word arguments
+		const parts: Prompt = [
+			{
+				type: "text",
+				content: "/debug the auth flow is broken",
+				start: 0,
+				end: 30,
+			},
+		]
+		await result.current.sendMessage(parts)
+
+		expect(mockCaller).toHaveBeenCalledWith("session.command", {
+			sessionId: "ses_123",
+			command: "debug",
+			arguments: "the auth flow is broken",
+		})
+	})
+
+	test("handles command with no arguments", async () => {
+		const mockCaller = mock(async () => undefined)
+		mock.module("./provider", () => ({
+			useOpenCode: mock(() => ({
+				caller: mockCaller,
+				url: "http://localhost:3000",
+				directory: "/test",
+				ready: true,
+				sync: mock(async () => {}),
+			})),
+		}))
+
+		mock.module("./use-commands", () => ({
+			useCommands: mock(() => ({
+				commands: [
+					{
+						id: "custom.status",
+						trigger: "status",
+						title: "Status",
+						type: "custom",
+					},
+				],
+				findCommand: mock((trigger: string) =>
+					trigger === "status"
+						? {
+								id: "custom.status",
+								trigger: "status",
+								title: "Status",
+								type: "custom",
+							}
+						: undefined,
+				),
+				loading: false,
+				error: null,
+			})),
+		}))
+
+		mock.module("./use-session-status", () => ({
+			useSessionStatus: mock(() => ({ running: false, isLoading: false })),
+		}))
+
+		const { result } = renderHook(() =>
+			useSendMessage({ sessionId: "ses_123", directory: "/test" }),
+		)
+
+		// Send command with no arguments
+		const parts: Prompt = [{ type: "text", content: "/status", start: 0, end: 7 }]
+		await result.current.sendMessage(parts)
+
+		expect(mockCaller).toHaveBeenCalledWith("session.command", {
+			sessionId: "ses_123",
+			command: "status",
+			arguments: "",
+		})
+	})
+
+	test("only checks text parts for slash commands (ignores file parts)", async () => {
+		const mockCaller = mock(async () => undefined)
+		mock.module("./provider", () => ({
+			useOpenCode: mock(() => ({
+				caller: mockCaller,
+				url: "http://localhost:3000",
+				directory: "/test",
+				ready: true,
+				sync: mock(async () => {}),
+			})),
+		}))
+
+		mock.module("./use-commands", () => ({
+			useCommands: mock(() => ({
+				commands: [],
+				findCommand: mock(() => undefined),
+				loading: false,
+				error: null,
+			})),
+		}))
+
+		mock.module("./use-session-status", () => ({
+			useSessionStatus: mock(() => ({ running: false, isLoading: false })),
+		}))
+
+		const { result } = renderHook(() =>
+			useSendMessage({ sessionId: "ses_123", directory: "/test" }),
+		)
+
+		// Send mixed parts - file part content starts with / but shouldn't trigger command
+		const parts: Prompt = [
+			{
+				type: "file",
+				path: "/src/app.ts",
+				content: "@/src/app.ts",
+				start: 0,
+				end: 12,
+			},
+			{ type: "text", content: " fix this", start: 12, end: 21 },
+		]
+		await result.current.sendMessage(parts)
+
+		// Should call session.promptAsync (not a command)
+		expect(mockCaller).toHaveBeenCalledWith(
+			"session.promptAsync",
+			expect.objectContaining({
+				sessionId: "ses_123",
+			}),
+		)
 	})
 })
