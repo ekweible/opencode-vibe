@@ -1235,6 +1235,51 @@ case "message.part.updated": {
 4. **Fallback to last completed** - When nothing running, show what just finished
 5. **Compact display** - Tool icon + action verb ("Reading file", "Searching...")
 
+### MVP Implementation (opencode-next)
+
+**Location:** `apps/web/src/components/ai-elements/task.tsx`
+
+**Exported Functions:**
+
+```typescript
+// Extract current activity from Task tool part
+function getCurrentlyDoing(part: ToolPart): CurrentActivity | null;
+
+// React component to display current activity
+function SubagentCurrentActivity({ part }: { part: ToolPart }): JSX.Element;
+```
+
+**Usage:**
+
+```tsx
+import { ToolPart } from "@opencode-ai/sdk/client";
+import { SubagentCurrentActivity } from "@/components/ai-elements/task";
+
+// In your message renderer, when you encounter a Task tool part:
+function TaskToolRenderer({ part }: { part: ToolPart }) {
+  if (part.tool !== "task") return null;
+
+  return (
+    <div>
+      <div className="task-header">{/* ... task title ... */}</div>
+
+      {/* Show what subagent is currently doing */}
+      <SubagentCurrentActivity part={part} />
+
+      {/* ... rest of task tool UI ... */}
+    </div>
+  );
+}
+```
+
+**What it shows:**
+
+- **Initializing** - "Starting..." (task running but no tools yet)
+- **Running** - "🔍 Searching..." (last running tool with formatted verb)
+- **Completed** - "Read src/auth.ts (234 lines)" (last completed tool title)
+
+**Test coverage:** 15 tests in `task.test.tsx` covering all states and edge cases.
+
 ---
 
 ## 7. Advanced Patterns

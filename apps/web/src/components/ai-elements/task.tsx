@@ -4,6 +4,71 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { cn } from "@/lib/utils"
 import { ChevronDownIcon, SearchIcon } from "lucide-react"
 import type { ComponentProps } from "react"
+import type { ToolPart } from "@opencode-ai/sdk/client"
+
+// Type definitions from SUBAGENT_DISPLAY.md Section 6
+interface TaskToolMetadata {
+	sessionId: string
+	summary: Array<{
+		id: string
+		tool: string
+		state: {
+			status: "pending" | "running" | "completed" | "error"
+			title?: string
+		}
+	}>
+}
+
+export interface CurrentActivity {
+	type: "running" | "completed"
+	tool: string
+	title?: string
+}
+
+/**
+ * Extracts the current activity from a Task tool part.
+ *
+ * Priority:
+ * 1. Last running tool (status: "running")
+ * 2. Last completed tool (status: "completed")
+ * 3. null if no tools executed yet
+ *
+ * @param part - ToolPart from OpenCode SDK
+ * @returns CurrentActivity or null if not applicable
+ */
+export function getCurrentlyDoing(part: ToolPart): CurrentActivity | null {
+	if (part.type !== "tool") return null
+	if (part.tool !== "task") return null
+	if (part.state.status === "pending") return null
+
+	// Get metadata which contains summary array
+	const metadata = part.state.metadata as TaskToolMetadata | undefined
+	if (!metadata?.summary || metadata.summary.length === 0) return null
+
+	// Find the last running tool
+	const running = metadata.summary.filter((item) => item.state.status === "running").at(-1)
+
+	if (running) {
+		return {
+			type: "running",
+			tool: running.tool,
+			// No title yet - still in progress
+		}
+	}
+
+	// Fallback to last completed tool
+	const lastCompleted = metadata.summary.filter((item) => item.state.status === "completed").at(-1)
+
+	if (lastCompleted) {
+		return {
+			type: "completed",
+			tool: lastCompleted.tool,
+			title: lastCompleted.state.title,
+		}
+	}
+
+	return null
+}
 
 export type TaskItemFileProps = ComponentProps<"div">
 
@@ -62,3 +127,67 @@ export const TaskContent = ({ children, className, ...props }: TaskContentProps)
 		<div className="mt-4 space-y-2 border-muted border-l-2 pl-4">{children}</div>
 	</CollapsibleContent>
 )
+
+/**
+ * Maps tool names to friendly action verbs
+ * Used for displaying "Reading file...", "Searching...", etc.
+ */
+function formatToolName(tool: string): string {
+	const names: Record<string, string> = {
+		read: "Reading file",
+		grep: "Searching",
+		glob: "Finding files",
+		edit: "Editing",
+		write: "Writing",
+		bash: "Running command",
+		task: "Subagent",
+	}
+	return names[tool] || tool
+}
+
+export type SubagentCurrentActivityProps = {
+	part: ToolPart
+	className?: string
+}
+
+/**
+ * Displays what a subagent is currently doing in real-time.
+ *
+ * Shows:
+ * - Running: Tool icon + action verb (e.g., "🔍 Searching...")
+ * - Completed: Last completed tool title
+ * - Initializing: "Starting..." when no summary yet
+ *
+ * Data source: part.state.metadata.summary (updates via SSE)
+ */
+export const SubagentCurrentActivity = ({ part, className }: SubagentCurrentActivityProps) => {
+	const activity = getCurrentlyDoing(part)
+
+	if (!activity) {
+		// Still initializing - task is running but no tools executed yet
+		if (part.type === "tool" && part.tool === "task" && part.state.status === "running") {
+			return (
+				<div className={cn("flex items-center gap-1.5 text-muted-foreground text-xs", className)}>
+					<span className="italic">Starting...</span>
+				</div>
+			)
+		}
+		return null
+	}
+
+	if (activity.type === "running") {
+		return (
+			<div className={cn("flex items-center gap-1.5 text-primary text-xs", className)}>
+				<SearchIcon className="size-3 animate-pulse" />
+				<span>{formatToolName(activity.tool)}...</span>
+			</div>
+		)
+	}
+
+	// Completed - show the title
+	return (
+		<div className={cn("flex items-center gap-1.5 text-muted-foreground text-xs", className)}>
+			<span>{activity.title || activity.tool}</span>
+		</div>
+	)
+}
