@@ -55,7 +55,7 @@ export function executeRoute<TInput, TOutput>(
 
 		// Step 3: Execute handler with middleware wrapping
 		if (!route._handler) {
-			throw new Error("Route has no handler")
+			return yield* Effect.fail(new HandlerError({ cause: new Error("Route has no handler") }))
 		}
 
 		// Build handler execution Effect

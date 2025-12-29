@@ -234,9 +234,9 @@ describe("executeRequestHandler", () => {
 			ctx: {},
 		}
 
-		// Linear retry: 3 attempts with 10ms delay
+		// Linear retry: 2 retries (3 total attempts) with 10ms delay
 		const program = executeRequestHandler(flakyHandler, context, {
-			retry: { maxAttempts: 3, delay: "10ms" },
+			retry: { maxAttempts: 2, delay: "10ms" },
 		})
 
 		const result = await Effect.runPromise(program)

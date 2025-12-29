@@ -146,27 +146,46 @@ export function streamToAsyncIterable<T>(
 	effectStream: Stream.Stream<T, unknown>,
 ): AsyncIterable<T> {
 	return {
-		[Symbol.asyncIterator](): AsyncIterator<T> {
-			let iterator: AsyncIterator<T> | null = null
+		async *[Symbol.asyncIterator]() {
+			const queue: T[] = []
+			let done = false
+			let error: unknown = null
+			let resolve: (() => void) | null = null
 
-			// Create iterator from stream
-			const createIterator = async () => {
-				const chunks = await Effect.runPromise(Stream.runCollect(effectStream))
-				iterator = chunks[Symbol.iterator]() as unknown as AsyncIterator<T>
-				return iterator
+			// Start consuming stream in background
+			Effect.runPromise(
+				Stream.runForEach(effectStream, (item) =>
+					Effect.sync(() => {
+						queue.push(item)
+						resolve?.() // Wake up the iterator
+						resolve = null
+					}),
+				),
+			)
+				.then(() => {
+					done = true
+					resolve?.()
+				})
+				.catch((e) => {
+					error = e
+					done = true
+					resolve?.()
+				})
+
+			// Yield items as they arrive
+			while (!done || queue.length > 0) {
+				if (queue.length > 0) {
+					yield queue.shift()!
+				} else if (!done) {
+					// Wait for next item
+					await new Promise<void>((r) => {
+						resolve = r
+					})
+				}
 			}
 
-			return {
-				async next() {
-					if (!iterator) {
-						await createIterator()
-					}
-
-					return iterator!.next()
-				},
-				async return(value?: any) {
-					return { done: true, value }
-				},
+			if (error) {
+				throw error
 			}
 		},
 	}

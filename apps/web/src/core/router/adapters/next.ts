@@ -22,14 +22,14 @@ import { ValidationError, TimeoutError, HandlerError, MiddlewareError } from "..
  */
 export interface NextHandlerOptions {
 	router: Router
-	createContext?: (req: Request) => Promise<{ sdk: OpencodeClient }>
+	createContext: (req: Request) => Promise<{ sdk: OpencodeClient }>
 }
 
 /**
  * Options for createAction
  */
 export interface ActionOptions {
-	createContext?: () => Promise<{ sdk: OpencodeClient }>
+	createContext: () => Promise<{ sdk: OpencodeClient }>
 }
 
 /**
@@ -79,7 +79,7 @@ export function createNextHandler(opts: NextHandlerOptions) {
 			}
 
 			// Create context
-			const ctx = opts.createContext ? await opts.createContext(req) : { sdk: {} as OpencodeClient }
+			const ctx = await opts.createContext(req)
 
 			// Parse input from query params (GET) or body (POST)
 			const input = await parseInput(req, url)
@@ -179,12 +179,12 @@ export function createNextHandler(opts: NextHandlerOptions) {
  */
 export function createAction<TInput, TOutput>(
 	route: Route<TInput, TOutput>,
-	opts: ActionOptions = {},
+	opts: ActionOptions,
 ): (input: TInput) => Promise<TOutput> {
 	return async (input: TInput): Promise<TOutput> => {
 		const controller = new AbortController()
 
-		const ctx = opts.createContext ? await opts.createContext() : { sdk: {} as OpencodeClient }
+		const ctx = await opts.createContext()
 
 		if (route._config.stream) {
 			// Return async iterable for streaming routes

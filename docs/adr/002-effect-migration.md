@@ -109,7 +109,7 @@ type RouteConfig = {
 
 **This is a flat repo, not a monorepo.** Router lives in `apps/web/src/core/router/`.
 
-```
+```text
 apps/web/src/core/router/
 ├── builder.ts          # createOpencodeRoute() fluent API
 ├── router.ts           # createRouter(), route resolution
