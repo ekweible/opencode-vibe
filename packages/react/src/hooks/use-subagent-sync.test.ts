@@ -221,7 +221,7 @@ describe("useSubagentSync", () => {
 		const event = {
 			directory: "/test/dir",
 			payload: {
-				type: "part.created",
+				type: "message.part.created",
 				properties: part,
 			},
 		}
@@ -292,7 +292,7 @@ describe("useSubagentSync", () => {
 		const event = {
 			directory: "/test/dir",
 			payload: {
-				type: "part.updated",
+				type: "message.part.updated",
 				properties: part,
 			},
 		}
@@ -523,7 +523,7 @@ describe("useSubagentSync", () => {
 		const partEvent = {
 			directory: "/test/dir",
 			payload: {
-				type: "part.created",
+				type: "message.part.created",
 				properties: {
 					id: "part-123",
 					messageID: "msg-123",

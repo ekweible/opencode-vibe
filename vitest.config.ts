@@ -6,7 +6,7 @@ export default defineConfig({
 		globals: true,
 		environment: "node",
 		include: ["**/*.test.{ts,tsx}"],
-		exclude: ["**/node_modules/**", "**/dist/**"],
+		exclude: ["**/node_modules/**", "**/dist/**", "**/.swarm/**"],
 		setupFiles: ["./vitest.setup.ts"],
 		isolate: true,
 		pool: "forks",
