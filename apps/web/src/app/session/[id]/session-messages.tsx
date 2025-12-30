@@ -3,6 +3,7 @@
 import { Fragment, useMemo, memo } from "react"
 import type { UIMessage, ChatStatus } from "ai"
 import { useMessagesWithParts, useSessionStatus } from "@/react"
+import type { Message as CoreMessage, Part } from "@opencode-vibe/core/types"
 import {
 	transformMessages,
 	type ExtendedUIMessage,
@@ -251,8 +252,8 @@ MessageRenderer.displayName = "MessageRenderer"
 /**
  * Client component for session messages with real-time updates.
  *
- * Reads messages from Zustand store which is updated by useMultiServerSSE.
- * This ensures real-time updates from ALL OpenCode servers (TUIs, serve processes, etc.)
+ * Hydrates from server-provided data, then subscribes to SSE for real-time updates.
+ * This ensures zero flicker on initial load - data is already present from RSC.
  *
  * This component is DISPLAY ONLY - input handling is done by the parent via PromptInput.
  */
@@ -264,10 +265,17 @@ export function SessionMessages({
 	initialStoreParts,
 	status: externalStatus,
 }: SessionMessagesProps) {
-	// Get messages with parts from API
+	// Flatten initialStoreParts from Record<messageId, Part[]> to Part[]
+	const initialPartsFlat = useMemo(() => {
+		return Object.values(initialStoreParts).flat() as Part[]
+	}, [initialStoreParts])
+
+	// Get messages with parts from API - hydrated from server data
 	const { messages: storeMessages } = useMessagesWithParts({
 		sessionId,
 		directory: directory || "/",
+		initialMessages: initialStoreMessages as CoreMessage[],
+		initialParts: initialPartsFlat,
 	})
 
 	// Get session status from API
@@ -277,16 +285,11 @@ export function SessionMessages({
 	})
 
 	// Transform store messages to UIMessage format (with extended metadata)
-	// Cast to OpenCodeMessage[] - the types are structurally compatible
-	const transformedStoreMessages = useMemo(() => {
-		if (storeMessages.length === 0) return [] as ExtendedUIMessage[]
+	// Since we're hydrated, storeMessages always has data on first render
+	const messages = useMemo(() => {
+		if (storeMessages.length === 0) return initialMessages as ExtendedUIMessage[]
 		return transformMessages(storeMessages as unknown as OpenCodeMessage[]) as ExtendedUIMessage[]
-	}, [storeMessages])
-
-	// Use store messages if available, otherwise fall back to initial messages
-	// This ensures we show initial SSR data until real-time updates arrive
-	const messages: ExtendedUIMessage[] =
-		storeMessages.length > 0 ? transformedStoreMessages : (initialMessages as ExtendedUIMessage[])
+	}, [storeMessages, initialMessages])
 
 	// Determine status: external (from parent) > running (from store) > ready
 	const status: ChatStatus = externalStatus ?? (running ? "streaming" : "ready")

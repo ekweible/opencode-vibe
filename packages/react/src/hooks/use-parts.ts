@@ -56,15 +56,24 @@ export interface UsePartsReturn {
  * @returns Object with parts, loading, error, and refetch
  */
 export function useParts(options: UsePartsOptions): UsePartsReturn {
-	const [partList, setPartList] = useState<Part[]>([])
-	const [loading, setLoading] = useState(true)
+	// Hydrate from server data if provided, otherwise start empty
+	const [partList, setPartList] = useState<Part[]>(options.initialData ?? [])
+	// Skip loading state if we have initial data (already hydrated)
+	const [loading, setLoading] = useState(!options.initialData)
 	const [error, setError] = useState<Error | null>(null)
 
 	// Track sessionId in ref to avoid stale closures in SSE callback
 	const sessionIdRef = useRef(options.sessionId)
 	sessionIdRef.current = options.sessionId
 
+	// Track if we've hydrated to avoid re-fetching on mount
+	const hydratedRef = useRef(!!options.initialData)
+
+	// Track if fetch is in progress to coordinate with SSE
+	const fetchInProgressRef = useRef(false)
+
 	const fetch = useCallback(() => {
+		fetchInProgressRef.current = true
 		setLoading(true)
 		setError(null)
 
@@ -80,18 +89,27 @@ export function useParts(options: UsePartsOptions): UsePartsReturn {
 				setPartList([])
 			})
 			.finally(() => {
+				fetchInProgressRef.current = false
 				setLoading(false)
 			})
 	}, [options.sessionId, options.directory])
 
-	// Initial fetch
+	// Initial fetch - skip if hydrated from server
 	useEffect(() => {
+		if (hydratedRef.current) {
+			// Already hydrated, don't fetch again
+			hydratedRef.current = false // Allow future refetches
+			return
+		}
 		fetch()
 	}, [fetch])
 
 	// Subscribe to SSE events for real-time updates
 	useEffect(() => {
 		const unsubscribe = multiServerSSE.onEvent((event) => {
+			// Skip SSE updates while fetch is in progress to avoid race conditions
+			if (fetchInProgressRef.current) return
+
 			const { type, properties } = event.payload
 
 			// Handle message.part.updated events

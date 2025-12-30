@@ -38,6 +38,10 @@ export interface UseMessagesWithPartsOptions {
 	sessionId: string
 	/** Project directory (optional) */
 	directory?: string
+	/** Initial messages from server (hydration) - skips initial fetch if provided */
+	initialMessages?: Message[]
+	/** Initial parts from server (hydration) - skips initial fetch if provided */
+	initialParts?: Part[]
 }
 
 export interface OpenCodeMessage {
@@ -72,14 +76,22 @@ export function useMessagesWithParts(
 		loading: messagesLoading,
 		error: messagesError,
 		refetch: refetchMessages,
-	} = useMessages(options)
+	} = useMessages({
+		sessionId: options.sessionId,
+		directory: options.directory,
+		initialData: options.initialMessages,
+	})
 
 	const {
 		parts: partList,
 		loading: partsLoading,
 		error: partsError,
 		refetch: refetchParts,
-	} = useParts(options)
+	} = useParts({
+		sessionId: options.sessionId,
+		directory: options.directory,
+		initialData: options.initialParts,
+	})
 
 	// Combine messages with their parts
 	const messages = useMemo(() => {
