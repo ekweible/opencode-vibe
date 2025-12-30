@@ -34,7 +34,7 @@ Four comprehensive audits revealed a critical DX problem: **opencode-vibe's Reac
 
 ```tsx
 // Current: 11 hooks to render a session
-const { directory } = useOpenCode()
+const { directory } = useOpencode()
 useMultiServerSSE()
 useSubagentSync({ sessionId })
 const { session } = useSession({ sessionId, directory })
@@ -110,7 +110,7 @@ useProviders, useFileSearch, useLiveTime, useCommands, useServers,
 useServersEffect, useCurrentServer, useSession, useSessionList,
 useSessionStatus, useSubagents, useSubagent, useContextUsage,
 useCompactionState, useSubagentSync, useFetch, useSSEResource,
-useSSEState, useSubscription, OpenCodeProvider, SSEProvider...
+useSSEState, useSubscription, OpencodeProvider, SSEProvider...
 ```
 
 **Target exports (9):**
@@ -119,7 +119,7 @@ useSSEState, useSubscription, OpenCodeProvider, SSEProvider...
 useSession
 
 // TIER 2: Setup
-OpenCodeProvider
+OpencodeProvider
 
 // TIER 3: Power Users (escape hatches)
 useSessionList, useServers, useProviders, useSendMessage,
@@ -281,7 +281,7 @@ export function formatTokens(n: number): string
 **New file:** `packages/core/src/utils/message-parts.ts`
 
 ```typescript
-export interface OpenCodeMessage {
+export interface OpencodeMessage {
   info: Message
   parts: Part[]
 }
@@ -294,7 +294,7 @@ export interface OpenCodeMessage {
 export function joinMessagesWithParts(
   messages: Message[],
   parts: Part[]
-): OpenCodeMessage[]
+): OpencodeMessage[]
 ```
 
 #### 1.3 Slash Command Parsing
@@ -450,7 +450,7 @@ packages/react/src/hooks/
 export { useSession, type UseSessionReturn } from "./hooks/use-session"
 
 // === SETUP ===
-export { OpenCodeProvider, type OpenCodeProviderProps } from "./providers"
+export { OpencodeProvider, type OpencodeProviderProps } from "./providers"
 
 // === ESCAPE HATCHES (power users) ===
 export { useSessionList } from "./hooks/use-session-list"
@@ -565,7 +565,7 @@ Add documentation to clarify when to use web vs core client:
 **New file:** `packages/react/src/hooks/use-session-facade.ts`
 
 ```tsx
-import { useOpenCode } from "../providers"
+import { useOpencode } from "../providers"
 import { useMultiServerSSE } from "./use-multi-server-sse"
 import { useSubagentSync } from "./use-subagent-sync"
 import { useSession as useSessionData } from "./use-session"
@@ -605,7 +605,7 @@ export function useSession(
     onError?: (err: Error) => void
   }
 ) {
-  const { directory: contextDir } = useOpenCode()
+  const { directory: contextDir } = useOpencode()
   const dir = options?.directory ?? contextDir
 
   // Initialize SSE + subagent sync (ONCE)
@@ -658,7 +658,7 @@ export function useSession(
 
 ```tsx
 export function SessionLayout({ sessionId, directory }) {
-  const { directory: contextDir } = useOpenCode()
+  const { directory: contextDir } = useOpencode()
   useMultiServerSSE()
   useSubagentSync({ sessionId })
   const { session } = useSession({ sessionId, directory: contextDir })
@@ -793,9 +793,9 @@ export function useSession(sessionId: string) {
 
 ```tsx
 // Before: Provider required
-<OpenCodeProvider url={url} directory={directory}>
+<OpencodeProvider url={url} directory={directory}>
   <SessionLayout sessionId={id} />
-</OpenCodeProvider>
+</OpencodeProvider>
 
 // After: Hook auto-discovers server
 <SessionLayout sessionId={id} directory={directory} />
@@ -1064,7 +1064,7 @@ export function createSession(opts: CreateSessionOpts): Effect.Effect<Session, S
 
 ### Provider Nesting
 
-- [x] **Current:** Required (`<OpenCodeProvider>`)
+- [x] **Current:** Required (`<OpencodeProvider>`)
 - [ ] **Phase 4:** Optional (auto-discovery fallback)
 
 ### DX Validation (Post-Phase 3)
@@ -1141,7 +1141,7 @@ export function createSession(opts: CreateSessionOpts): Effect.Effect<Session, S
 - [ ] Implement auto-server-discovery in hooks
 - [ ] Create `OpencodeSSRPlugin` for Next.js
 - [ ] Add globalThis hydration for static config
-- [ ] Make `OpenCodeProvider` optional
+- [ ] Make `OpencodeProvider` optional
 - [ ] Add progressive enhancement fallback
 - [ ] Update docs to show provider-less usage
 - [ ] Verify uploadthing DX parity
@@ -1195,7 +1195,7 @@ export function createSession(opts: CreateSessionOpts): Effect.Effect<Session, S
 
 ```tsx
 export function SessionLayout({ sessionId, directory }) {
-  const { directory: contextDirectory } = useOpenCode()
+  const { directory: contextDirectory } = useOpencode()
   useMultiServerSSE()
   useSubagentSync({ sessionId })
   const { session } = useSession({ sessionId, directory: contextDirectory })

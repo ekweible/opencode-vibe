@@ -21,7 +21,7 @@ The React layer consists of **3 architectural tiers**:
 
 ### 1.1 Core Provider Infrastructure
 
-#### `provider.tsx` - OpenCodeProvider
+#### `provider.tsx` - OpencodeProvider
 
 **Dependencies:**
 
@@ -135,7 +135,7 @@ subscribe("message.updated", (event: GlobalEvent) => {
 
 ### 1.2 Data Access Hooks (Zustand Selectors)
 
-These hooks read from the Zustand store. Real-time updates happen automatically via OpenCodeProvider's SSE subscription.
+These hooks read from the Zustand store. Real-time updates happen automatically via OpencodeProvider's SSE subscription.
 
 #### `use-session.ts`
 
@@ -145,7 +145,7 @@ These hooks read from the Zustand store. Real-time updates happen automatically 
 
 ```ts
 export function useSession(sessionId: string): Session | undefined {
-  const { directory } = useOpenCode();
+  const { directory } = useOpencode();
   return useOpencodeStore((state) => {
     const result = Binary.search(
       state.directories[directory].sessions,
@@ -169,7 +169,7 @@ export function useSession(sessionId: string): Session | undefined {
 const EMPTY_MESSAGES: Message[] = []; // Stable reference
 
 export function useMessages(sessionId: string): Message[] {
-  const { directory } = useOpenCode();
+  const { directory } = useOpencode();
   return useOpencodeStore(
     (state) =>
       state.directories[directory]?.messages[sessionId] || EMPTY_MESSAGES,
@@ -187,7 +187,7 @@ export function useMessages(sessionId: string): Message[] {
 
 ```ts
 export function useSessionStatus(sessionId: string) {
-  const { directory } = useOpenCode();
+  const { directory } = useOpencode();
   const status = useOpencodeStore(
     (state) =>
       state.directories[directory]?.sessionStatus[sessionId] ?? "completed",
@@ -204,7 +204,7 @@ export function useSessionStatus(sessionId: string) {
 
 ```ts
 export function useCompactionState(sessionId: string): CompactionState {
-  const { directory } = useOpenCode();
+  const { directory } = useOpencode();
   return useOpencodeStore(
     useShallow((state) => {
       const compaction = state.directories[directory]?.compaction[sessionId];
@@ -238,7 +238,7 @@ export function useCompactionState(sessionId: string): CompactionState {
 
 ```ts
 export function useMessagesWithParts(sessionId: string) {
-  const { directory } = useOpenCode();
+  const { directory } = useOpencode();
   const messages = useOpencodeStore(
     (state) => state.directories[directory]?.messages[sessionId],
   );
@@ -261,7 +261,7 @@ export function useMessagesWithParts(sessionId: string) {
 
 ### 1.3 Action Hooks (SDK Callers)
 
-These hooks invoke Effect router routes. They use the `caller` from OpenCodeProvider context.
+These hooks invoke Effect router routes. They use the `caller` from OpencodeProvider context.
 
 #### `use-send-message.ts`
 
@@ -683,25 +683,25 @@ const subagent = getByParentPart(partId);
 
 **All hooks require:**
 
-- `OpenCodeProvider` → provides `{ url, directory, ready, sync, caller }`
+- `OpencodeProvider` → provides `{ url, directory, ready, sync, caller }`
 - `SSEProvider` → provides `{ subscribe, connected, reconnect }`
 
 **Provider hierarchy:**
 
 ```tsx
 <SSEProvider url={url}>
-  <OpenCodeProvider url={url} directory={directory}>
+  <OpencodeProvider url={url} directory={directory}>
     {children}
-  </OpenCodeProvider>
+  </OpencodeProvider>
 </SSEProvider>
 ```
 
 **Context usage:**
 
 ```ts
-const { directory } = useOpenCode(); // Directory scoping
-const { caller } = useOpenCode(); // Router invocation
-const { sync } = useOpenCode(); // Manual session sync
+const { directory } = useOpencode(); // Directory scoping
+const { caller } = useOpencode(); // Router invocation
+const { sync } = useOpencode(); // Manual session sync
 const { subscribe } = useSSE(); // SSE event subscription
 ```
 
@@ -713,9 +713,9 @@ const { subscribe } = useSSE(); // SSE event subscription
 
 ```tsx
 <SSEProvider url={env.OPENCODE_URL}>
-  <OpenCodeProvider url={env.OPENCODE_URL} directory={projectDir}>
+  <OpencodeProvider url={env.OPENCODE_URL} directory={projectDir}>
     <App />
-  </OpenCodeProvider>
+  </OpencodeProvider>
 </SSEProvider>
 ```
 
@@ -854,14 +854,14 @@ useEffect(() => {
 **Providers:**
 
 ```ts
-export { OpenCodeProvider, SSEProvider };
-export type { OpenCodeContextValue, SSEContextValue };
+export { OpencodeProvider, SSEProvider };
+export type { OpencodeContextValue, SSEContextValue };
 ```
 
 **Context Hooks:**
 
 ```ts
-export { useOpenCode, useSSE };
+export { useOpencode, useSSE };
 ```
 
 **Data Hooks (Zustand):**
@@ -934,9 +934,9 @@ export { useSubagents };
 
 **Why:**
 
-- `useOpenCode()` provides `caller` from `createCaller(router, { sdk })`
+- `useOpencode()` provides `caller` from `createCaller(router, { sdk })`
 - `useSendMessage()` invokes `caller("session.promptAsync", ...)`
-- `OpenCodeProvider` creates router instance internally
+- `OpencodeProvider` creates router instance internally
 
 **Import Example:**
 
@@ -1086,7 +1086,7 @@ const messages = useOpencodeStore(
 ```
 @joelhooks/swarmtools-react/
 ├── providers/
-│   ├── OpenCodeProvider.tsx
+│   ├── OpencodeProvider.tsx
 │   └── SSEProvider.tsx
 ├── hooks/
 │   ├── use-opencode.ts       # Context hook
@@ -1122,7 +1122,7 @@ export type * from "./types";
 
 ```ts
 import {
-  OpenCodeProvider,
+  OpencodeProvider,
   useSession,
   useSendMessage,
 } from "@joelhooks/swarmtools-react";
@@ -1138,7 +1138,7 @@ import {
 describe("useSession", () => {
   it("returns session from store", () => {
     const { result } = renderHook(() => useSession("ses_123"), {
-      wrapper: MockOpenCodeProvider,
+      wrapper: MockOpencodeProvider,
     });
     expect(result.current).toEqual(mockSession);
   });
@@ -1148,7 +1148,7 @@ describe("useSession", () => {
 **Integration Tests:** Provider + SSE + store interactions
 
 ```ts
-describe("OpenCodeProvider", () => {
+describe("OpencodeProvider", () => {
   it("syncs messages on session.updated event", async () => {
     // Render provider, emit SSE event, assert store updated
   });

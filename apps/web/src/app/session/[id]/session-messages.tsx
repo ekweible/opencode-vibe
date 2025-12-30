@@ -7,7 +7,7 @@ import type { Message as CoreMessage, Part } from "@opencode-vibe/core/types"
 import {
 	transformMessages,
 	type ExtendedUIMessage,
-	type OpenCodeMessage,
+	type OpencodeMessage,
 } from "@/lib/transform-messages"
 import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message"
 import { Tool, ToolHeader, ToolContent, ToolInput, ToolOutput } from "@/components/ai-elements/tool"
@@ -288,7 +288,7 @@ export function SessionMessages({
 	// Since we're hydrated, storeMessages always has data on first render
 	const messages = useMemo(() => {
 		if (storeMessages.length === 0) return initialMessages as ExtendedUIMessage[]
-		return transformMessages(storeMessages as unknown as OpenCodeMessage[]) as ExtendedUIMessage[]
+		return transformMessages(storeMessages as unknown as OpencodeMessage[]) as ExtendedUIMessage[]
 	}, [storeMessages, initialMessages])
 
 	// Determine status: external (from parent) > running (from store) > ready

@@ -202,7 +202,7 @@ const session = await caller("session.get", { id: "ses_123" });
 │   ├── index.ts                    # Main entry point
 │   ├── providers/
 │   │   ├── index.ts                # Provider exports
-│   │   ├── opencode-provider.tsx   # OpenCodeProvider
+│   │   ├── opencode-provider.tsx   # OpencodeProvider
 │   │   └── sse-provider.tsx        # SSEProvider
 │   ├── hooks/
 │   │   ├── index.ts                # Hook exports
@@ -239,10 +239,10 @@ const session = await caller("session.get", { id: "ses_123" });
 
 ```typescript
 // Providers
-export { OpenCodeProvider, SSEProvider } from "./providers";
+export { OpencodeProvider, SSEProvider } from "./providers";
 
 // Context Hooks
-export { useOpenCode, useSSE } from "./hooks";
+export { useOpencode, useSSE } from "./hooks";
 
 // Data Hooks (Selectors)
 export { useSession, useSessions } from "./hooks";
@@ -293,7 +293,7 @@ export type { UseSendMessageOptions, UseSendMessageReturn };
 ```tsx
 import {
   SSEProvider,
-  OpenCodeProvider,
+  OpencodeProvider,
   useSession,
   useSendMessage,
 } from "@opencode-vibe/react";
@@ -302,12 +302,12 @@ import {
 export default function RootLayout({ children }) {
   return (
     <SSEProvider url="http://localhost:4056">
-      <OpenCodeProvider
+      <OpencodeProvider
         url="http://localhost:4056"
         directory="/path/to/project"
       >
         {children}
-      </OpenCodeProvider>
+      </OpencodeProvider>
     </SSEProvider>
   );
 }
@@ -541,12 +541,12 @@ export * from "./hooks";
 export * from "./types";
 
 // src/providers/index.ts
-export { OpenCodeProvider } from "./opencode-provider";
+export { OpencodeProvider } from "./opencode-provider";
 export { SSEProvider } from "./sse-provider";
-export type { OpenCodeProviderProps, SSEProviderProps };
+export type { OpencodeProviderProps, SSEProviderProps };
 
 // src/hooks/index.ts
-export { useOpenCode } from "./use-opencode";
+export { useOpencode } from "./use-opencode";
 export { useSSE } from "./use-sse";
 export { useSession, useSessions } from "./use-session";
 export { useMessages, useMessagesWithParts } from "./use-messages";

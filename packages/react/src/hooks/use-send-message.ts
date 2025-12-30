@@ -53,7 +53,7 @@ export interface UseSendMessageReturn {
  * - Queue auto-processes when session transitions from running → idle
  *
  * **Integration Points:**
- * - Uses `useOpenCode` caller to invoke session.promptAsync route
+ * - Uses `useOpencode` caller to invoke session.promptAsync route
  * - Uses `useSessionStatus` to monitor session running state
  * - Integrates with SSE via store.handleEvent → session.status updates
  * - Session status format: "running" | "pending" | "completed" | "error"

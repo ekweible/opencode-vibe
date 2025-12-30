@@ -27,7 +27,7 @@
  */
 
 import { useState, useEffect, useRef } from "react"
-import { useOpenCode } from "../providers"
+import { useOpencode } from "../providers"
 import { createClient } from "../lib/client-stub"
 import fuzzysort from "fuzzysort"
 
@@ -53,7 +53,7 @@ export function useFileSearch(
 	options: UseFileSearchOptions = {},
 ): UseFileSearchResult {
 	const { debounceMs = 150 } = options
-	const { directory } = useOpenCode()
+	const { directory } = useOpencode()
 
 	const [files, setFiles] = useState<string[]>([])
 	const [isLoading, setIsLoading] = useState(false)

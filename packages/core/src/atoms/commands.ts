@@ -12,7 +12,7 @@
  */
 
 import { Effect } from "effect"
-import { globalClient } from "../client/index.js"
+import { createClient } from "../client/index.js"
 
 /**
  * Custom command definition from API
@@ -48,8 +48,8 @@ export const CommandAtom = {
 	 */
 	list: (directory?: string): Effect.Effect<CustomCommand[], Error> =>
 		Effect.gen(function* () {
-			// Get client for directory if specified
-			const client = directory ? globalClient : globalClient
+			// Create client lazily (not at module load time)
+			const client = createClient(directory)
 
 			const result = yield* Effect.tryPromise({
 				try: () => client.command.list(),

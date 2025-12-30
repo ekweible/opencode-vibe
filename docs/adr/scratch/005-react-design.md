@@ -35,7 +35,7 @@ packages/react/
 │   ├── index.ts                    # Main entry point
 │   ├── providers/
 │   │   ├── index.ts                # Provider exports
-│   │   ├── opencode-provider.tsx   # OpenCodeProvider
+│   │   ├── opencode-provider.tsx   # OpencodeProvider
 │   │   └── sse-provider.tsx        # SSEProvider
 │   ├── hooks/
 │   │   ├── index.ts                # Hook exports
@@ -106,14 +106,14 @@ packages/react/
 
 ## 2. Provider API
 
-### OpenCodeProvider
+### OpencodeProvider
 
 **Purpose**: Bootstrap OpenCode connection, provide router caller, manage SSE subscriptions
 
 ```tsx
-import { OpenCodeProvider } from "@opencode-vibe/react";
+import { OpencodeProvider } from "@opencode-vibe/react";
 
-interface OpenCodeProviderProps {
+interface OpencodeProviderProps {
   /** Base URL of OpenCode server (e.g., "http://localhost:4056") */
   url: string;
 
@@ -131,15 +131,15 @@ interface OpenCodeProviderProps {
 }
 
 // Usage
-<OpenCodeProvider url="http://localhost:4056" directory="/path/to/project">
+<OpencodeProvider url="http://localhost:4056" directory="/path/to/project">
   <App />
-</OpenCodeProvider>;
+</OpencodeProvider>;
 ```
 
 **Context Value**:
 
 ```ts
-interface OpenCodeContextValue {
+interface OpencodeContextValue {
   /** Base URL of connected server */
   url: string;
 
@@ -196,9 +196,9 @@ interface SSEProviderProps {
 
 // Usage
 <SSEProvider url="http://localhost:4056">
-  <OpenCodeProvider url="http://localhost:4056" directory="/path">
+  <OpencodeProvider url="http://localhost:4056" directory="/path">
     <App />
-  </OpenCodeProvider>
+  </OpencodeProvider>
 </SSEProvider>;
 ```
 
@@ -237,17 +237,17 @@ interface SSEContextValue {
 
 ```tsx
 // app/layout.tsx
-import { SSEProvider, OpenCodeProvider } from "@opencode-vibe/react";
+import { SSEProvider, OpencodeProvider } from "@opencode-vibe/react";
 
 export default function RootLayout({ children }) {
   return (
     <SSEProvider url={process.env.OPENCODE_URL}>
-      <OpenCodeProvider
+      <OpencodeProvider
         url={process.env.OPENCODE_URL}
         directory={process.env.PROJECT_DIR}
       >
         {children}
-      </OpenCodeProvider>
+      </OpencodeProvider>
     </SSEProvider>
   );
 }
@@ -256,8 +256,8 @@ export default function RootLayout({ children }) {
 **Why nested?**
 
 - SSEProvider manages connection lifecycle (singleton)
-- OpenCodeProvider consumes SSE and routes to store
-- Multiple OpenCodeProviders can share one SSEProvider (multi-project)
+- OpencodeProvider consumes SSE and routes to store
+- Multiple OpencodeProviders can share one SSEProvider (multi-project)
 
 ---
 
@@ -265,18 +265,18 @@ export default function RootLayout({ children }) {
 
 ### Context Hooks
 
-#### useOpenCode
+#### useOpencode
 
 **Purpose**: Access OpenCode context (directory, caller, sync)
 
 ```ts
-import { useOpenCode } from '@opencode-vibe/react'
+import { useOpencode } from '@opencode-vibe/react'
 
-function useOpenCode(): OpenCodeContextValue
+function useOpencode(): OpencodeContextValue
 
 // Usage
 function MyComponent() {
-  const { directory, caller, ready, sync } = useOpenCode()
+  const { directory, caller, ready, sync } = useOpencode()
 
   if (!ready) return <Loading />
 
@@ -867,13 +867,13 @@ namespace Binary {
 
 ### Caller Creation Pattern
 
-**Inside OpenCodeProvider**:
+**Inside OpencodeProvider**:
 
 ```ts
 import { createRouter, createCaller } from '@opencode-vibe/router'
 import { createRoutes } from '@opencode-vibe/router/routes'
 
-function OpenCodeProvider({ url, directory, children }) {
+function OpencodeProvider({ url, directory, children }) {
   const callerRef = useRef<Caller | null>(null)
 
   // Create caller once
@@ -885,9 +885,9 @@ function OpenCodeProvider({ url, directory, children }) {
   }
 
   return (
-    <OpenCodeContext.Provider value={{ caller: callerRef.current, ... }}>
+    <OpencodeContext.Provider value={{ caller: callerRef.current, ... }}>
       {children}
-    </OpenCodeContext.Provider>
+    </OpencodeContext.Provider>
   )
 }
 ```
@@ -898,7 +898,7 @@ function OpenCodeProvider({ url, directory, children }) {
 
 ```ts
 function useSendMessage({ sessionId }) {
-  const { caller } = useOpenCode()
+  const { caller } = useOpencode()
 
   const sendMessage = useCallback(async (parts: PromptPart[]) => {
     await caller('session.promptAsync', {
@@ -916,7 +916,7 @@ function useSendMessage({ sessionId }) {
 **SDK client is created internally, not exposed**:
 
 ```ts
-// Internal to OpenCodeProvider
+// Internal to OpencodeProvider
 import { createOpencodeClient } from "@opencode-ai/sdk/client";
 
 function createClient(url: string, directory: string) {
@@ -1070,12 +1070,12 @@ function createClient(url: string, directory: string) {
 
 ```ts
 // Providers
-export { OpenCodeProvider, SSEProvider } from "./providers";
-export type { OpenCodeProviderProps, SSEProviderProps } from "./providers";
-export type { OpenCodeContextValue, SSEContextValue } from "./providers";
+export { OpencodeProvider, SSEProvider } from "./providers";
+export type { OpencodeProviderProps, SSEProviderProps } from "./providers";
+export type { OpencodeContextValue, SSEContextValue } from "./providers";
 
 // Context Hooks
-export { useOpenCode, useSSE } from "./hooks";
+export { useOpencode, useSSE } from "./hooks";
 
 // Data Hooks (Selectors)
 export { useSession, useSessions } from "./hooks";
@@ -1114,16 +1114,16 @@ export type { GlobalEvent, EventPayload } from "./types";
 **`@opencode-vibe/react/providers`**:
 
 ```ts
-export { OpenCodeProvider, SSEProvider };
-export type { OpenCodeProviderProps, SSEProviderProps };
-export type { OpenCodeContextValue, SSEContextValue };
+export { OpencodeProvider, SSEProvider };
+export type { OpencodeProviderProps, SSEProviderProps };
+export type { OpencodeContextValue, SSEContextValue };
 ```
 
 **`@opencode-vibe/react/hooks`**:
 
 ```ts
 // All hooks
-export { useOpenCode, useSSE };
+export { useOpencode, useSSE };
 export { useSession, useSessions, useMessages, useMessagesWithParts };
 export { useSessionStatus, useCompactionState, useContextUsage };
 export { useSendMessage, useCreateSession, useProviders };
@@ -1146,19 +1146,19 @@ export type { Session, Message, Part, ... }
 
 ```tsx
 // app/layout.tsx
-import { SSEProvider, OpenCodeProvider } from "@opencode-vibe/react";
+import { SSEProvider, OpencodeProvider } from "@opencode-vibe/react";
 
 export default function RootLayout({ children }) {
   return (
     <html>
       <body>
         <SSEProvider url="http://localhost:4056">
-          <OpenCodeProvider
+          <OpencodeProvider
             url="http://localhost:4056"
             directory="/Users/joel/Code/project"
           >
             {children}
-          </OpenCodeProvider>
+          </OpencodeProvider>
         </SSEProvider>
       </body>
     </html>
@@ -1232,10 +1232,10 @@ function MultiServerSync() {
 export default function RootLayout({ children }) {
   return (
     <SSEProvider url="http://localhost:4056">
-      <OpenCodeProvider ...>
+      <OpencodeProvider ...>
         <MultiServerSync />
         {children}
-      </OpenCodeProvider>
+      </OpencodeProvider>
     </SSEProvider>
   )
 }
@@ -1251,7 +1251,7 @@ export default function RootLayout({ children }) {
 // use-session.test.ts
 import { renderHook } from '@testing-library/react'
 import { useSession } from '@opencode-vibe/react'
-import { MockOpenCodeProvider } from './test-utils'
+import { MockOpencodeProvider } from './test-utils'
 
 describe('useSession', () => {
   it('returns session from store', () => {
@@ -1260,9 +1260,9 @@ describe('useSession', () => {
     const { result } = renderHook(
       () => useSession('ses_123'),
       { wrapper: ({ children }) => (
-        <MockOpenCodeProvider sessions={[mockSession]}>
+        <MockOpencodeProvider sessions={[mockSession]}>
           {children}
-        </MockOpenCodeProvider>
+        </MockOpencodeProvider>
       )}
     )
 
@@ -1272,7 +1272,7 @@ describe('useSession', () => {
   it('returns undefined for missing session', () => {
     const { result } = renderHook(
       () => useSession('nonexistent'),
-      { wrapper: MockOpenCodeProvider }
+      { wrapper: MockOpencodeProvider }
     )
 
     expect(result.current).toBeUndefined()
@@ -1285,23 +1285,23 @@ describe('useSession', () => {
 ```ts
 // opencode-provider.test.tsx
 import { render, waitFor } from '@testing-library/react'
-import { OpenCodeProvider, useOpenCode } from '@opencode-vibe/react'
+import { OpencodeProvider, useOpencode } from '@opencode-vibe/react'
 import { mockSSEProvider, mockRouter } from './test-utils'
 
-describe('OpenCodeProvider', () => {
+describe('OpencodeProvider', () => {
   it('provides caller to children', async () => {
-    let contextValue: OpenCodeContextValue | null = null
+    let contextValue: OpencodeContextValue | null = null
 
     function Consumer() {
-      contextValue = useOpenCode()
+      contextValue = useOpencode()
       return null
     }
 
     render(
       <mockSSEProvider>
-        <OpenCodeProvider url="http://test" directory="/test">
+        <OpencodeProvider url="http://test" directory="/test">
           <Consumer />
-        </OpenCodeProvider>
+        </OpencodeProvider>
       </mockSSEProvider>
     )
 
@@ -1317,16 +1317,16 @@ describe('OpenCodeProvider', () => {
 
 ```ts
 // test-utils.tsx
-export function MockOpenCodeProvider({
+export function MockOpencodeProvider({
   children,
   sessions = [],
   messages = {},
 }) {
   // Pre-populate store with test data
   return (
-    <OpenCodeContext.Provider value={mockContextValue}>
+    <OpencodeContext.Provider value={mockContextValue}>
       {children}
-    </OpenCodeContext.Provider>
+    </OpencodeContext.Provider>
   )
 }
 
@@ -1397,14 +1397,14 @@ const compaction = useOpencodeStore(
 
 ```ts
 import { useSession } from "@/react/use-session";
-import { OpenCodeProvider } from "@/react/provider";
+import { OpencodeProvider } from "@/react/provider";
 import { useOpencodeStore } from "@/react/store";
 ```
 
 **After** (with extracted package):
 
 ```ts
-import { useSession, OpenCodeProvider } from "@opencode-vibe/react";
+import { useSession, OpencodeProvider } from "@opencode-vibe/react";
 // useOpencodeStore is NOT exported - use hooks instead
 ```
 

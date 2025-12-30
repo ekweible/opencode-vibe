@@ -8,7 +8,7 @@
 import { describe, test, expect } from "vitest"
 
 // Extract types and calculation function from context-usage module
-type OpenCodeMessage = {
+type OpencodeMessage = {
 	info: {
 		id: string
 		role: string
@@ -43,7 +43,7 @@ interface UsageStats {
 /**
  * Pure calculation function extracted for testing
  */
-function calculateUsage(messages: OpenCodeMessage[]): UsageStats {
+function calculateUsage(messages: OpencodeMessage[]): UsageStats {
 	const breakdown: TokenBreakdown = {
 		input: 0,
 		output: 0,
@@ -86,7 +86,7 @@ describe("calculateUsage", () => {
 	})
 
 	test("ignores user messages", () => {
-		const messages: OpenCodeMessage[] = [
+		const messages: OpencodeMessage[] = [
 			{
 				info: { id: "1", role: "user" },
 				parts: [],
@@ -98,7 +98,7 @@ describe("calculateUsage", () => {
 	})
 
 	test("calculates total tokens from all assistant messages", () => {
-		const messages: OpenCodeMessage[] = [
+		const messages: OpencodeMessage[] = [
 			{
 				info: {
 					id: "1",
@@ -144,7 +144,7 @@ describe("calculateUsage", () => {
 	})
 
 	test("handles missing token fields gracefully", () => {
-		const messages: OpenCodeMessage[] = [
+		const messages: OpencodeMessage[] = [
 			{
 				info: {
 					id: "1",
@@ -166,7 +166,7 @@ describe("calculateUsage", () => {
 	})
 
 	test("handles missing cost gracefully", () => {
-		const messages: OpenCodeMessage[] = [
+		const messages: OpencodeMessage[] = [
 			{
 				info: {
 					id: "1",
@@ -183,7 +183,7 @@ describe("calculateUsage", () => {
 	})
 
 	test("handles messages with no tokens field", () => {
-		const messages: OpenCodeMessage[] = [
+		const messages: OpencodeMessage[] = [
 			{
 				info: {
 					id: "1",

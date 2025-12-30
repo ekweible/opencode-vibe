@@ -124,7 +124,7 @@ opencode-vibe/
 │       │   │   │   ├── useSSE.ts
 │       │   │   │   └── useProvider.ts
 │       │   │   └── context/
-│       │   │       └── OpenCodeProvider.tsx
+│       │   │       └── OpencodeProvider.tsx
 │       │   │
 │       │   ├── ui/              # Extraction-ready → @opencode/ui
 │       │   │   ├── chat/

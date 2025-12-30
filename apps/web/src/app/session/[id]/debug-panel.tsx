@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from "react"
 import {
-	useOpenCode,
+	useOpencode,
 	useMessages,
 	useMessagesWithParts,
 	useParts,
-	type OpenCodeMessage,
+	type OpencodeMessage,
 } from "@/react"
 import { multiServerSSE } from "@opencode-vibe/core/sse"
 
@@ -28,7 +28,7 @@ export function DebugPanel({ sessionId, isOpen }: DebugPanelProps) {
 		time: number
 	} | null>(null)
 	const [copied, setCopied] = useState(false)
-	const { directory } = useOpenCode()
+	const { directory } = useOpencode()
 	const messagesWithParts = useMessagesWithParts({ sessionId })
 	const storeMessages = useMessages({ sessionId })
 	const storeParts = useParts({ sessionId })

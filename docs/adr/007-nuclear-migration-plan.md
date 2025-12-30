@@ -256,7 +256,7 @@ import {
 - `useCommands` - Custom commands
 
 ### React Providers
-- `OpenCodeProvider` - Context provider for directory + baseUrl
+- `OpencodeProvider` - Context provider for directory + baseUrl
 - `SSEProvider` - SSE connection context (if needed separately)
 
 ---
@@ -265,7 +265,7 @@ import {
 
 ### Category 1: Missing Zustand Store (7 errors)
 
-**Error:** `useOpencodeStore` does not exist (replaced by `useOpenCode`)
+**Error:** `useOpencodeStore` does not exist (replaced by `useOpencode`)
 
 **Files:**
 1. `src/app/projects-list.tsx:15` - imports `useOpencodeStore`
@@ -560,18 +560,18 @@ export interface UseMessagesWithPartsOptions {
   directory?: string
 }
 
-export interface OpenCodeMessage {
+export interface OpencodeMessage {
   info: Message
   parts: Part[]
 }
 
-export function useMessagesWithParts(options: UseMessagesWithPartsOptions): OpenCodeMessage[]
+export function useMessagesWithParts(options: UseMessagesWithPartsOptions): OpencodeMessage[]
 ```
 
 **Implementation:**
 1. Call `useMessages({ sessionId, directory })` to get messages
 2. For each message, call `parts.list(sessionId, directory)` to get parts (or subscribe via SSE)
-3. Combine into `OpenCodeMessage[]` format
+3. Combine into `OpencodeMessage[]` format
 4. Use `useMemo` to avoid unnecessary recalculations
 5. **PERFORMANCE:** Consider `useDeferredValue` for streaming updates (same as old hook)
 
@@ -738,7 +738,7 @@ export interface UseProvidersReturn {
 **File:** `apps/web/src/app/projects-list.tsx`
 
 **Errors:**
-1. Line 15: `useOpencodeStore` → `useOpenCode`
+1. Line 15: `useOpencodeStore` → `useOpencode`
 2. Line 16: `SessionStatusType` → Remove or find replacement
 3. Line 18: `useMultiServerSSE` → Import from new location (after Task 1.6)
 4. Line 217: Function expects 1 arg → Fix call site
@@ -747,7 +747,7 @@ export interface UseProvidersReturn {
 7. Line 334: `event` param has implicit `any` type → Add type annotation
 
 **Implementation:**
-1. Replace `useOpencodeStore` with `useOpenCode`
+1. Replace `useOpencodeStore` with `useOpencode`
 2. Remove `SessionStatusType` import (or define locally if needed)
 3. Import `useMultiServerSSE` from new location
 4. Fix SSE subscription to use new API (likely `useSSE` with event filtering)
@@ -763,13 +763,13 @@ export interface UseProvidersReturn {
 2. Line 13: `useSessionStatus` → Import from new location (after Task 1.2)
 3. Line 14: `useMultiServerSSE` → Import from new location (after Task 1.6)
 4. Line 15: `useSubagentSync` → Import from new location (after Task 1.8)
-5. Line 16: `useOpencodeStore` → `useOpenCode`
+5. Line 16: `useOpencodeStore` → `useOpencode`
 6. Line 146: `useMessages` signature changed → Pass object not string
 7. Line 194: `.length` on `UseMessagesReturn` → Access `.messages.length`
 
 **Implementation:**
 1. Import all hooks from new locations
-2. Replace `useOpencodeStore` with `useOpenCode`
+2. Replace `useOpencodeStore` with `useOpencode`
 3. Fix `useMessages` call: `useMessages(sessionId)` → `useMessages({ sessionId })`
 4. Fix `.length` access: `messages.length` → `messages.messages.length`
 
@@ -781,11 +781,11 @@ export interface UseProvidersReturn {
 **Errors:**
 1. Line 5: `useMessagesWithParts` → Import from new location (after Task 1.5)
 2. Line 5: `useSessionStatus` → Import from new location (after Task 1.2)
-3. Line 5: `useOpencodeStore` → `useOpenCode`
+3. Line 5: `useOpencodeStore` → `useOpencode`
 
 **Implementation:**
 1. Import hooks from new locations
-2. Replace `useOpencodeStore` with `useOpenCode`
+2. Replace `useOpencodeStore` with `useOpencode`
 
 ---
 
@@ -793,14 +793,14 @@ export interface UseProvidersReturn {
 **File:** `apps/web/src/app/session/[id]/debug-panel.tsx`
 
 **Errors:**
-1. Line 4: `useOpencodeStore` → `useOpenCode`
+1. Line 4: `useOpencodeStore` → `useOpencode`
 2. Line 4: `useMessagesWithParts` → Import from new location (after Task 1.5)
 3. Line 28: `useMessages` signature changed → Pass object not string
 4. Line 89: `.length` on `UseMessagesReturn` → Access `.messages.length`
 5. Line 220: `.length` on `UseMessagesReturn` → Access `.messages.length`
 
 **Implementation:**
-1. Replace `useOpencodeStore` with `useOpenCode`
+1. Replace `useOpencodeStore` with `useOpencode`
 2. Import `useMessagesWithParts` from new location
 3. Fix `useMessages` call: `useMessages(sessionId)` → `useMessages({ sessionId })`
 4. Fix `.length` access
@@ -885,7 +885,7 @@ export interface UseProvidersReturn {
 - `apps/web/src/app/session/[id]/session-messages.test.tsx`
 
 **Errors:**
-1. Both import `useOpencodeStore` → Replace with `useOpenCode` or mock new API
+1. Both import `useOpencodeStore` → Replace with `useOpencode` or mock new API
 
 **Implementation:**
 1. Update test mocks for new API
@@ -905,7 +905,7 @@ export { useSession, type UseSessionOptions, type UseSessionReturn } from "./hoo
 export { useSessionStatus, type UseSessionStatusOptions, type SessionStatus } from "./hooks/use-session-status"
 export { useContextUsage, type UseContextUsageOptions, type ContextUsageState, formatTokens } from "./hooks/use-context-usage"
 export { useCompactionState, type UseCompactionStateOptions, type CompactionState, type CompactionProgress } from "./hooks/use-compaction-state"
-export { useMessagesWithParts, type UseMessagesWithPartsOptions, type OpenCodeMessage } from "./hooks/use-messages-with-parts"
+export { useMessagesWithParts, type UseMessagesWithPartsOptions, type OpencodeMessage } from "./hooks/use-messages-with-parts"
 export { useMultiServerSSE } from "./hooks/use-multi-server-sse"
 export { useSubagent, type UseSubagentOptions, type UseSubagentReturn } from "./hooks/use-subagent"
 export { useSubagentSync, type UseSubagentSyncOptions } from "./hooks/use-subagent-sync"
@@ -1097,7 +1097,7 @@ bun test
 **Gotchas:**
 - SSE events need filtering by sessionId/directory
 - Subagent state is an Effect `Ref` - use Promise API wrappers
-- Messages/parts need combining into `OpenCodeMessage` format
+- Messages/parts need combining into `OpencodeMessage` format
 - Context usage/compaction are SSE-only (no Promise API)
 - Session status comes from both `sessions.get()` AND SSE events
 

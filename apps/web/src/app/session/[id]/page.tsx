@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation"
 import { Suspense } from "react"
 import { createClient } from "@/lib/client"
-import { transformMessages, type OpenCodeMessage } from "@/lib/transform-messages"
+import { transformMessages, type OpencodeMessage } from "@/lib/transform-messages"
 import type { Session } from "@opencode-ai/sdk/client"
 import { SessionLayout } from "./session-layout"
 import { Loader } from "@/components/ai-elements/loader"
@@ -95,10 +95,10 @@ async function getMessages(id: string, directory?: string) {
 			}
 		}
 
-		// Convert to OpenCodeMessage format for initial UI render (already in correct shape)
-		const opencodeMessages: OpenCodeMessage[] = sdkMessages.map((msg) => ({
-			info: msg.info as unknown as OpenCodeMessage["info"],
-			parts: (msg.parts || []) as OpenCodeMessage["parts"],
+		// Convert to OpencodeMessage format for initial UI render (already in correct shape)
+		const opencodeMessages: OpencodeMessage[] = sdkMessages.map((msg) => ({
+			info: msg.info as unknown as OpencodeMessage["info"],
+			parts: (msg.parts || []) as OpencodeMessage["parts"],
 		}))
 
 		return {

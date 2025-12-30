@@ -129,11 +129,11 @@ This is a **pure re-export** with no added value. It exists for backward compati
 
 **Exports:**
 ```typescript
-export type OpenCodeMessage = { info: Message, parts: Part[] }
+export type OpencodeMessage = { info: Message, parts: Part[] }
 export type ExtendedUIMessage = UIMessage & { _opencode?: {...} }
 export function transformPart(part: Part): SupportedUIPart | null
-export function transformMessage(opencodeMsg: OpenCodeMessage): ExtendedUIMessage
-export function transformMessages(opencodeMessages: OpenCodeMessage[]): UIMessage[]
+export function transformMessage(opencodeMsg: OpencodeMessage): ExtendedUIMessage
+export function transformMessages(opencodeMessages: OpencodeMessage[]): UIMessage[]
 ```
 
 **Analysis:**

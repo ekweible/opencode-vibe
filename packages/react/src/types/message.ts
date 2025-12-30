@@ -5,10 +5,10 @@
 import type { Message, Part } from "@opencode-vibe/core/types"
 
 /**
- * OpenCodeMessage combines message info with its parts
+ * OpencodeMessage combines message info with its parts
  * Used throughout the React package for message display
  */
-export type OpenCodeMessage = {
+export type OpencodeMessage = {
 	info: Message
 	parts: Part[]
 }

@@ -1033,7 +1033,7 @@ export const usePromptStore = create<PromptState>((set, get) => ({
 ```typescript
 // hooks/useCommands.ts
 import { useCallback, useMemo } from "react";
-import { useOpenCode } from "../providers/OpenCodeProvider";
+import { useOpencode } from "../providers/OpencodeProvider";
 
 interface CommandOption {
   id: string;
@@ -1046,7 +1046,7 @@ interface CommandOption {
 }
 
 export function useCommands() {
-  const { directory, sync } = useOpenCode();
+  const { directory, sync } = useOpencode();
 
   // Built-in commands
   const builtinCommands: CommandOption[] = useMemo(
@@ -1119,12 +1119,12 @@ export function useCommands() {
 import { useRef, useCallback, useEffect } from 'react';
 import { usePromptStore } from '../stores/prompt-store';
 import { useCommands } from '../hooks/useCommands';
-import { useOpenCode } from '../providers/OpenCodeProvider';
+import { useOpencode } from '../providers/OpencodeProvider';
 import { Autocomplete } from './Autocomplete';
 
 export function PromptInput({ sessionId }: { sessionId?: string }) {
   const editorRef = useRef<HTMLDivElement>(null);
-  const { directory, sdk } = useOpenCode();
+  const { directory, sdk } = useOpencode();
   const { commands, findCommand } = useCommands();
   const store = usePromptStore();
 
@@ -1530,11 +1530,11 @@ src/
 ```typescript
 // app/session/[id]/page.tsx
 import { PromptInput } from '@/components/PromptInput';
-import { OpenCodeProvider } from '@/providers/OpenCodeProvider';
+import { OpencodeProvider } from '@/providers/OpencodeProvider';
 
 export default function SessionPage({ params }: { params: { id: string } }) {
   return (
-    <OpenCodeProvider
+    <OpencodeProvider
       url={process.env.NEXT_PUBLIC_OPENCODE_URL!}
       directory={process.env.NEXT_PUBLIC_OPENCODE_DIRECTORY!}
     >
@@ -1546,7 +1546,7 @@ export default function SessionPage({ params }: { params: { id: string } }) {
           <PromptInput sessionId={params.id} />
         </div>
       </div>
-    </OpenCodeProvider>
+    </OpencodeProvider>
   );
 }
 ```

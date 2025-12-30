@@ -7,7 +7,7 @@ This folder will be extracted to `packages/react` when patterns stabilize.
 ## Purpose
 
 - React hooks (`useSession`, `useMessages`, `useSSE`, `useProvider`)
-- Context providers (`<OpenCodeProvider>`)
+- Context providers (`<OpencodeProvider>`)
 - React-specific integration layer
 - Server Actions for SDK calls
 - Reusable across any React app (web, desktop)

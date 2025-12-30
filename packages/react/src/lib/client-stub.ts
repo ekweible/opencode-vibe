@@ -3,7 +3,7 @@
  * This is a placeholder - actual client creation is app-specific
  */
 
-export interface OpenCodeClient {
+export interface OpencodeClient {
 	find: {
 		files: (params: { query: { query: string; dirs: string } }) => Promise<{ data: string[] }>
 	}
@@ -13,6 +13,6 @@ export interface OpenCodeClient {
  * Stub client creator
  * In app layer, this imports from @opencode/core
  */
-export function createClient(_directory: string): OpenCodeClient {
+export function createClient(_directory: string): OpencodeClient {
 	throw new Error("createClient stub - should be provided by app layer")
 }

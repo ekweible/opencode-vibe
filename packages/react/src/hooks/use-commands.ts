@@ -4,6 +4,8 @@
  * Returns builtin and custom slash commands.
  * Builtin commands are hardcoded, custom commands fetched from API.
  *
+ * @param options.directory - Project directory for server discovery (uses discovered server, not hardcoded URL)
+ *
  * @returns {
  *   commands: SlashCommand[] - all commands (builtin + custom)
  *   getSlashCommands: () => SlashCommand[] - filter to commands with triggers
@@ -14,7 +16,7 @@
  *
  * @example
  * ```tsx
- * const { commands, findCommand, loading, error } = useCommands()
+ * const { commands, findCommand, loading, error } = useCommands({ directory })
  *
  * if (loading) return <Spinner />
  * if (error) console.warn("Failed to load custom commands:", error)
@@ -27,6 +29,14 @@ import { useMemo, useCallback } from "react"
 import { commands as commandsApi } from "@opencode-vibe/core/api"
 import type { SlashCommand } from "../types/prompt"
 import { useFetch } from "./use-fetch"
+
+/**
+ * Options for useCommands hook
+ */
+export interface UseCommandsOptions {
+	/** Project directory for server discovery */
+	directory?: string
+}
 
 /**
  * Builtin slash commands
@@ -58,18 +68,24 @@ const BUILTIN_COMMANDS: SlashCommand[] = [
  * useCommands hook
  *
  * Uses Promise API from @opencode-vibe/core/api to fetch custom commands.
- * No longer requires caller from OpenCodeProvider context.
+ * Pass directory option to use server discovery instead of hardcoded URL.
  */
-export function useCommands() {
-	// Fetch custom commands from API
+export function useCommands(options: UseCommandsOptions = {}) {
+	const { directory } = options
+
+	// Fetch custom commands from API using discovered server
 	const {
 		data: apiCommands,
 		loading,
 		error,
-	} = useFetch(() => commandsApi.list(), undefined, {
+	} = useFetch(() => commandsApi.list(directory), directory, {
 		initialData: [],
 		onError: (err) => {
-			console.error("Failed to fetch custom commands:", err)
+			// Only log if we have a directory (server should be reachable)
+			// Silent fail if no directory - may be during SSR or before discovery
+			if (directory) {
+				console.error("Failed to fetch custom commands:", err)
+			}
 		},
 	})
 

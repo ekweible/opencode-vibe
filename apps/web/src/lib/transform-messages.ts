@@ -51,7 +51,7 @@ type SupportedUIPart = TextUIPart | ReasoningUIPart | FileUIPart | StepStartUIPa
  *
  * Note: We use a loose type for info to support both SDK Message and store Message types
  */
-export type OpenCodeMessage = {
+export type OpencodeMessage = {
 	info: {
 		id: string
 		role: string
@@ -212,7 +212,7 @@ export type ExtendedUIMessage = UIMessage & {
 /**
  * Transform OpenCode message envelope to ai-elements UIMessage
  */
-export function transformMessage(opencodeMsg: OpenCodeMessage): ExtendedUIMessage {
+export function transformMessage(opencodeMsg: OpencodeMessage): ExtendedUIMessage {
 	const transformedParts = opencodeMsg.parts
 		.map(transformPart)
 		.filter((part): part is SupportedUIPart => part !== null)
@@ -239,6 +239,6 @@ export function transformMessage(opencodeMsg: OpenCodeMessage): ExtendedUIMessag
 /**
  * Batch transform multiple OpenCode messages
  */
-export function transformMessages(opencodeMessages: OpenCodeMessage[]): UIMessage[] {
+export function transformMessages(opencodeMessages: OpencodeMessage[]): UIMessage[] {
 	return opencodeMessages.map(transformMessage)
 }

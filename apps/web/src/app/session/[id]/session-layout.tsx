@@ -5,11 +5,11 @@ import Link from "next/link"
 import type { UIMessage } from "ai"
 import { toast } from "sonner"
 import {
-	OpenCodeProvider,
+	OpencodeProvider,
 	useSession,
 	useMessages,
 	useSendMessage,
-	useOpenCode,
+	useOpencode,
 	useSessionStatus,
 	useMultiServerSSE,
 	useSubagentSync,
@@ -89,7 +89,7 @@ interface SessionLayoutProps {
 /**
  * Session content component - uses hooks to access reactive data
  *
- * Must be inside OpenCodeProvider to access useSession and useMessages.
+ * Must be inside OpencodeProvider to access useSession and useMessages.
  */
 function SessionContent({
 	sessionId,
@@ -116,7 +116,7 @@ function SessionContent({
 	const [debugPanelOpen, setDebugPanelOpen] = useState(false)
 	const toggleDebugPanel = () => setDebugPanelOpen((prev) => !prev)
 
-	const { directory: contextDirectory } = useOpenCode()
+	const { directory: contextDirectory } = useOpencode()
 
 	// Subscribe to SSE events from all OpenCode servers
 	useMultiServerSSE()
@@ -267,7 +267,7 @@ function SessionContent({
 /**
  * Client component wrapper for session page
  *
- * Wraps content with OpenCodeProvider to enable reactive hooks.
+ * Wraps content with OpencodeProvider to enable reactive hooks.
  * Server-provided initial data is used as fallback until SSE updates arrive.
  */
 export function SessionLayout({
@@ -282,7 +282,7 @@ export function SessionLayout({
 	const url = process.env.NEXT_PUBLIC_OPENCODE_URL || "http://localhost:4056"
 
 	return (
-		<OpenCodeProvider url={url} directory={directory || session.directory}>
+		<OpencodeProvider url={url} directory={directory || session.directory}>
 			<SessionContent
 				sessionId={sessionId}
 				directory={directory}
@@ -291,6 +291,6 @@ export function SessionLayout({
 				initialStoreParts={initialStoreParts}
 				initialSession={session}
 			/>
-		</OpenCodeProvider>
+		</OpencodeProvider>
 	)
 }

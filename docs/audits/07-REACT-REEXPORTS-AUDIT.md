@@ -113,8 +113,8 @@ Extract to `packages/react` after **third use** of a pattern.
 - `useFileSearch` + types
 
 #### Providers
-- `OpenCodeProvider` + types
-- `useOpenCode` + types
+- `OpencodeProvider` + types
+- `useOpencode` + types
 - `SSEProvider` + types
 
 #### Re-exports from Core
@@ -155,7 +155,7 @@ useLiveTime, useFileSearch
 ### packages/react/src/providers/index.ts (13 lines)
 
 ```typescript
-OpenCodeProvider, useOpenCode + types
+OpencodeProvider, useOpencode + types
 SSEProvider, useSSE + types (WRONG - useSSE should be hook not provider export)
 ```
 

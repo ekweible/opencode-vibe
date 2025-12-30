@@ -77,7 +77,7 @@ import { useCallback, useState, useRef, useEffect } from "react";
 import type { Prompt } from "@/types/prompt";
 import { convertToApiParts } from "@/lib/prompt-api";
 import { useSessionStatus } from "./use-session-status";
-import { useOpenCode } from "./provider";
+import { useOpencode } from "./provider";
 import { useCommands } from "./use-commands";
 
 // ... existing interfaces ...
@@ -88,7 +88,7 @@ export function useSendMessage({
 }: UseSendMessageOptions): UseSendMessageReturn {
   // ... existing state ...
 
-  const { caller } = useOpenCode();
+  const { caller } = useOpencode();
   const { findCommand } = useCommands();
 
   // ... existing refs ...
@@ -223,11 +223,11 @@ Built-in commands like `/new`, `/share`, `/compact` should execute client-side a
 
 import { useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { useOpenCode } from "./provider";
+import { useOpencode } from "./provider";
 
 export function useCommandHandler(sessionId: string) {
   const router = useRouter();
-  const { caller } = useOpenCode();
+  const { caller } = useOpencode();
 
   const executeBuiltinCommand = useCallback(
     async (commandId: string, args?: string): Promise<boolean> => {
@@ -323,14 +323,14 @@ Update `useCommands` to fetch custom commands from the server:
 
 import { useMemo, useCallback, useEffect, useState } from "react";
 import type { SlashCommand } from "@/types/prompt";
-import { useOpenCode } from "./provider";
+import { useOpencode } from "./provider";
 
 const BUILTIN_COMMANDS: SlashCommand[] = [
   // ... existing builtin commands ...
 ];
 
 export function useCommands() {
-  const { caller } = useOpenCode();
+  const { caller } = useOpencode();
   const [customCommands, setCustomCommands] = useState<SlashCommand[]>([]);
 
   // Fetch custom commands from API

@@ -3,10 +3,10 @@
  */
 
 export {
-	OpenCodeProvider,
-	useOpenCode,
-	type OpenCodeContextValue,
-	type OpenCodeProviderProps,
+	OpencodeProvider,
+	useOpencode,
+	type OpencodeContextValue,
+	type OpencodeProviderProps,
 } from "./opencode-provider"
 
 export { SSEProvider, useSSE, type SSEContextValue, type SSEProviderProps } from "./sse-provider"

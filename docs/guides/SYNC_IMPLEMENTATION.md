@@ -528,7 +528,7 @@ const createEmptyDirectoryState = (): DirectoryState => ({
   parts: {},
 });
 
-export const useOpenCodeStore = create<OpenCodeStore>()(
+export const useOpencodeStore = create<OpenCodeStore>()(
   immer((set, get) => ({
     directories: {},
 
@@ -735,31 +735,31 @@ export function createEventClient(baseUrl: string) {
 ### Step 5: Provider Component
 
 ```typescript
-// providers/OpenCodeProvider.tsx
+// providers/OpencodeProvider.tsx
 'use client';
 
 import { createContext, useContext, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import { useSSE } from '../hooks/useSSE';
-import { useOpenCodeStore } from '../stores/opencode-store';
+import { useOpencodeStore } from '../stores/opencode-store';
 import { createClient } from '../lib/opencode-client';
 
-interface OpenCodeContextValue {
+interface OpencodeContextValue {
   url: string;
   directory: string;
   ready: boolean;
   sync: (sessionID: string) => Promise<void>;
 }
 
-const OpenCodeContext = createContext<OpenCodeContextValue | null>(null);
+const OpencodeContext = createContext<OpencodeContextValue | null>(null);
 
-interface OpenCodeProviderProps {
+interface OpencodeProviderProps {
   url: string;
   directory: string;
   children: ReactNode;
 }
 
-export function OpenCodeProvider({ url, directory, children }: OpenCodeProviderProps) {
-  const store = useOpenCodeStore();
+export function OpencodeProvider({ url, directory, children }: OpencodeProviderProps) {
+  const store = useOpencodeStore();
   const clientRef = useRef(createClient(url, directory));
 
   // Initialize directory state
@@ -884,16 +884,16 @@ export function OpenCodeProvider({ url, directory, children }: OpenCodeProviderP
   const ready = dirState?.ready ?? false;
 
   return (
-    <OpenCodeContext.Provider value={{ url, directory, ready, sync }}>
+    <OpencodeContext.Provider value={{ url, directory, ready, sync }}>
       {children}
-    </OpenCodeContext.Provider>
+    </OpencodeContext.Provider>
   );
 }
 
-export function useOpenCode() {
-  const context = useContext(OpenCodeContext);
+export function useOpencode() {
+  const context = useContext(OpencodeContext);
   if (!context) {
-    throw new Error('useOpenCode must be used within OpenCodeProvider');
+    throw new Error('useOpencode must be used within OpencodeProvider');
   }
   return context;
 }
@@ -903,13 +903,13 @@ export function useOpenCode() {
 
 ```typescript
 // hooks/useSession.ts
-import { useOpenCodeStore } from "../stores/opencode-store";
-import { useOpenCode } from "../providers/OpenCodeProvider";
+import { useOpencodeStore } from "../stores/opencode-store";
+import { useOpencode } from "../providers/OpencodeProvider";
 import { useEffect } from "react";
 
 export function useSessions() {
-  const { directory, ready } = useOpenCode();
-  const sessions = useOpenCodeStore(
+  const { directory, ready } = useOpencode();
+  const sessions = useOpencodeStore(
     (state) => state.directories[directory]?.sessions ?? [],
   );
 
@@ -917,12 +917,12 @@ export function useSessions() {
 }
 
 export function useSession(sessionID: string) {
-  const { directory, sync } = useOpenCode();
-  const session = useOpenCodeStore((state) => {
+  const { directory, sync } = useOpencode();
+  const session = useOpencodeStore((state) => {
     const sessions = state.directories[directory]?.sessions ?? [];
     return sessions.find((s) => s.id === sessionID);
   });
-  const status = useOpenCodeStore(
+  const status = useOpencodeStore(
     (state) => state.directories[directory]?.sessionStatus[sessionID],
   );
 
@@ -935,22 +935,22 @@ export function useSession(sessionID: string) {
 }
 
 export function useMessages(sessionID: string) {
-  const { directory } = useOpenCode();
-  return useOpenCodeStore(
+  const { directory } = useOpencode();
+  return useOpencodeStore(
     (state) => state.directories[directory]?.messages[sessionID] ?? [],
   );
 }
 
 export function useParts(messageID: string) {
-  const { directory } = useOpenCode();
-  return useOpenCodeStore(
+  const { directory } = useOpencode();
+  return useOpencodeStore(
     (state) => state.directories[directory]?.parts[messageID] ?? [],
   );
 }
 
 export function useSessionStatus(sessionID: string) {
-  const { directory } = useOpenCode();
-  return useOpenCodeStore(
+  const { directory } = useOpencode();
+  return useOpencodeStore(
     (state) => state.directories[directory]?.sessionStatus[sessionID],
   );
 }
@@ -1198,7 +1198,7 @@ src/
 ├── stores/
 │   └── opencode-store.ts
 ├── providers/
-│   └── OpenCodeProvider.tsx
+│   └── OpencodeProvider.tsx
 ├── lib/
 │   └── opencode-client.ts
 └── utils/
@@ -1209,7 +1209,7 @@ src/
 
 ```typescript
 // app/layout.tsx
-import { OpenCodeProvider } from '@/providers/OpenCodeProvider';
+import { OpencodeProvider } from '@/providers/OpencodeProvider';
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   // In real app, get these from env/config
@@ -1219,9 +1219,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html>
       <body>
-        <OpenCodeProvider url={url} directory={directory}>
+        <OpencodeProvider url={url} directory={directory}>
           {children}
-        </OpenCodeProvider>
+        </OpencodeProvider>
       </body>
     </html>
   );

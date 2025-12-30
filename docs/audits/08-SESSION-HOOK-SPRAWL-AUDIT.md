@@ -21,7 +21,7 @@
 
 **Hooks called:**
 
-1. `useOpenCode()` - context consumer (directory only)
+1. `useOpencode()` - context consumer (directory only)
 2. `useMultiServerSSE()` - SSE connection manager
 3. `useSubagentSync({ sessionId })` - subagent tracking
 4. `useSession({ sessionId, directory })` - fetch session data
@@ -75,10 +75,10 @@
 
 ```
 SessionLayout (Component)
-  ├─ OpenCodeProvider (Context)
+  ├─ OpencodeProvider (Context)
   │   └─ provides: { url, directory, ready, sync }
   │
-  ├─ useOpenCode() → directory
+  ├─ useOpencode() → directory
   ├─ useMultiServerSSE() → starts SSE (singleton)
   ├─ useSubagentSync({ sessionId })
   │   └─ calls: useMultiServerSSE({ onEvent })
@@ -308,7 +308,7 @@ export function SessionPage({ sessionId }) {
 
 ```tsx
 export function SessionLayout({ sessionId, directory }) {
-  const { directory: contextDirectory } = useOpenCode()
+  const { directory: contextDirectory } = useOpencode()
   useMultiServerSSE()
   useSubagentSync({ sessionId })
   const { session } = useSession({ sessionId, directory: contextDirectory })
@@ -325,7 +325,7 @@ export function SessionLayout({ sessionId, directory }) {
   // - useContextUsage
   // - useCompactionState
 
-  return <OpenCodeProvider url={url} directory={directory}>...</OpenCodeProvider>
+  return <OpencodeProvider url={url} directory={directory}>...</OpencodeProvider>
 }
 ```
 
@@ -413,7 +413,7 @@ export function useSession(sessionId: string, options?: {
   onMessage?: (msg: Message) => void
   onError?: (err: Error) => void
 }) {
-  const { directory: contextDir } = useOpenCode()
+  const { directory: contextDir } = useOpencode()
   const dir = options?.directory ?? contextDir
 
   // Call internal hooks once
@@ -500,15 +500,15 @@ export function useSession(sessionId: string) {
 
 ### Phase 3: Remove Provider Entirely (Future - 1 week)
 
-Once store is primary, OpenCodeProvider is just dead weight.
+Once store is primary, OpencodeProvider is just dead weight.
 
 **Change:**
 
 ```tsx
 // BEFORE
-<OpenCodeProvider url={url} directory={directory}>
+<OpencodeProvider url={url} directory={directory}>
   <SessionLayout sessionId={id} />
-</OpenCodeProvider>
+</OpencodeProvider>
 
 // AFTER
 <SessionLayout sessionId={id} directory={directory} />
@@ -577,7 +577,7 @@ Once store is primary, OpenCodeProvider is just dead weight.
    - [ ] Benchmark performance improvement
 
 3. **Long term (next month):**
-   - [ ] Remove OpenCodeProvider
+   - [ ] Remove OpencodeProvider
    - [ ] Auto-server-discovery
    - [ ] Full uploadthing DX parity
 
@@ -587,11 +587,11 @@ Once store is primary, OpenCodeProvider is just dead weight.
 
 ```
 SessionLayout Component Tree
-├─ OpenCodeProvider (context)
+├─ OpencodeProvider (context)
 │  └─ value: { url, directory, ready, sync }
 │
 ├─ SessionContent (inside provider)
-│  ├─ useOpenCode() → { directory }
+│  ├─ useOpencode() → { directory }
 │  ├─ useMultiServerSSE() → singleton.start()
 │  ├─ useSubagentSync({ sessionId })
 │  │  └─ useMultiServerSSE({ onEvent })

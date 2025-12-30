@@ -44,7 +44,7 @@ export {
 	useMessagesWithParts,
 	type UseMessagesWithPartsOptions,
 	type UseMessagesWithPartsReturn,
-	type OpenCodeMessage,
+	type OpencodeMessage,
 } from "./use-messages-with-parts"
 export {
 	useProjects,
@@ -112,7 +112,7 @@ export {
 // === Actions ===
 export { useSendMessage } from "./use-send-message"
 export { useCreateSession } from "./use-create-session"
-export { useCommands } from "./use-commands"
+export { useCommands, type UseCommandsOptions } from "./use-commands"
 
 // === Utilities ===
 export { useLiveTime } from "./use-live-time"

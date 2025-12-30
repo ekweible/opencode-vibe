@@ -180,12 +180,17 @@ bun format:fix
 ### Testing
 
 ```bash
-# Run tests (uses bun:test)
-bun test
+# Run tests (uses Vitest, NOT bun test)
+bun run test              # Runs: vitest run
 
 # Watch mode
-bun test --watch
+bun run test:watch        # Runs: vitest
+
+# With coverage
+bun run test:coverage     # Runs: vitest run --coverage
 ```
+
+**CRITICAL:** Always use `bun run test`, never `bun test` directly. The `bun test` command uses Bun's built-in test runner which has poor isolation - stores and singletons leak state between tests causing flaky failures. Vitest with `pool: "forks"` provides proper process isolation.
 
 ---
 

@@ -656,11 +656,11 @@ Components (useSync hook)
 ```
 SSEProvider (SSE connection)
   ↓
-OpenCodeProvider (wraps SSE, provides context)
+OpencodeProvider (wraps SSE, provides context)
   ↓
 Zustand Store (multi-directory state)
   ↓
-Components (useOpenCode, useSession hooks)
+Components (useOpencode, useSession hooks)
 ```
 
 **Files:**

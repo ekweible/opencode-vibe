@@ -338,10 +338,10 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Cause from "effect/Cause";
 import { useCallback, useEffect, useState } from "react";
-import { useOpenCode } from "./use-provider";
+import { useOpencode } from "./use-provider";
 
 export function useSession(sessionId: string) {
-  const { caller } = useOpenCode();
+  const { caller } = useOpencode();
   const [session, setSession] = useState<Session | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const [isLoading, setIsLoading] = useState(true);

@@ -25,7 +25,7 @@ export {
 	useMessagesWithParts,
 	type UseMessagesWithPartsOptions,
 	type UseMessagesWithPartsReturn,
-	type OpenCodeMessage,
+	type OpencodeMessage,
 } from "./hooks/use-messages-with-parts"
 export {
 	useProjects,
@@ -35,10 +35,10 @@ export {
 	type Project,
 } from "./hooks/use-projects"
 export {
-	OpenCodeProvider,
-	useOpenCode,
-	type OpenCodeContextValue,
-	type OpenCodeProviderProps,
+	OpencodeProvider,
+	useOpencode,
+	type OpencodeContextValue,
+	type OpencodeProviderProps,
 	SSEProvider,
 	type SSEContextValue,
 	type SSEProviderProps,

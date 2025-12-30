@@ -44,7 +44,7 @@ export interface UseMessagesWithPartsOptions {
 	initialParts?: Part[]
 }
 
-export interface OpenCodeMessage {
+export interface OpencodeMessage {
 	/** Message metadata */
 	info: Message
 	/** Parts associated with this message */
@@ -53,7 +53,7 @@ export interface OpenCodeMessage {
 
 export interface UseMessagesWithPartsReturn {
 	/** Array of messages with their parts */
-	messages: OpenCodeMessage[]
+	messages: OpencodeMessage[]
 	/** Loading state - true if either messages or parts are loading */
 	loading: boolean
 	/** Error from either hook - messages error takes precedence */
