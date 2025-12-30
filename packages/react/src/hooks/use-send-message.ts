@@ -3,12 +3,7 @@ import type { Prompt, SlashCommand } from "../types/prompt"
 import { convertToApiParts } from "../lib/prompt-api"
 import { useCommands } from "./use-commands"
 import { sessions } from "@opencode-vibe/core/api"
-
-// Stub: useSessionStatus was deleted in migration
-// TODO: Replace with proper session status tracking
-function useSessionStatus(_sessionId: string) {
-	return { running: false }
-}
+import { useSessionStatus } from "./use-session-status"
 
 /**
  * Result of parsing a prompt for slash commands
@@ -146,7 +141,7 @@ export function useSendMessage({
 	const processNextRef = useRef<(() => Promise<void>) | undefined>(undefined)
 
 	// Track session status to know when to process next message
-	const { running } = useSessionStatus(sessionId)
+	const { running } = useSessionStatus({ sessionId, directory })
 
 	/**
 	 * Process a single message via router caller.
