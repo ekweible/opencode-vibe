@@ -1,8 +1,8 @@
 /**
- * useSession - Bridge Promise API to React state
+ * useSession - Bridge Promise API to React state with SSE updates
  *
  * Wraps sessions.get from @opencode-vibe/core/api and manages React state.
- * Provides loading, error, and data states for a single session.
+ * Subscribes to SSE events for real-time updates when session is updated.
  *
  * @example
  * ```tsx
@@ -20,8 +20,9 @@
 
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { sessions } from "@opencode-vibe/core/api"
+import { multiServerSSE } from "@opencode-vibe/core/sse"
 import type { Session } from "@opencode-vibe/core/types"
 
 export interface UseSessionOptions {
@@ -43,7 +44,7 @@ export interface UseSessionReturn {
 }
 
 /**
- * Hook to fetch a single session using Promise API from core
+ * Hook to fetch a single session with real-time SSE updates
  *
  * @param options - Options with sessionId and optional directory
  * @returns Object with session, loading, error, and refetch
@@ -52,6 +53,10 @@ export function useSession(options: UseSessionOptions): UseSessionReturn {
 	const [session, setSession] = useState<Session | null>(null)
 	const [loading, setLoading] = useState(true)
 	const [error, setError] = useState<Error | null>(null)
+
+	// Track sessionId in ref to avoid stale closures in SSE callback
+	const sessionIdRef = useRef(options.sessionId)
+	sessionIdRef.current = options.sessionId
 
 	const fetch = useCallback(() => {
 		setLoading(true)
@@ -73,9 +78,33 @@ export function useSession(options: UseSessionOptions): UseSessionReturn {
 			})
 	}, [options.sessionId, options.directory])
 
+	// Initial fetch
 	useEffect(() => {
 		fetch()
 	}, [fetch])
+
+	// Subscribe to SSE events for real-time updates
+	useEffect(() => {
+		const unsubscribe = multiServerSSE.onEvent((event) => {
+			const { type, properties } = event.payload
+
+			// Only handle session events for our session
+			if (!type.startsWith("session.")) return
+
+			const sessionData = properties.info as Session | undefined
+			const sessionId = sessionData?.id ?? (properties.sessionID as string | undefined)
+
+			if (!sessionId || sessionId !== sessionIdRef.current) return
+
+			if (type === "session.updated" && sessionData) {
+				setSession(sessionData)
+			} else if (type === "session.deleted") {
+				setSession(null)
+			}
+		})
+
+		return unsubscribe
+	}, []) // Empty deps - callback uses refs
 
 	return {
 		session,

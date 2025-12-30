@@ -1,8 +1,8 @@
 /**
- * useMessages - Bridge Promise API to React state
+ * useMessages - Bridge Promise API to React state with SSE updates
  *
  * Wraps messages.list from @opencode-vibe/core/api and manages React state.
- * Provides loading, error, and data states for message list.
+ * Subscribes to SSE events for real-time updates when messages are created/updated.
  *
  * @example
  * ```tsx
@@ -23,8 +23,10 @@
 
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { messages } from "@opencode-vibe/core/api"
+import { multiServerSSE } from "@opencode-vibe/core/sse"
+import { Binary } from "@opencode-vibe/core/utils"
 import type { Message } from "@opencode-vibe/core/types"
 
 export interface UseMessagesOptions {
@@ -46,7 +48,7 @@ export interface UseMessagesReturn {
 }
 
 /**
- * Hook to fetch message list using Promise API from core
+ * Hook to fetch message list with real-time SSE updates
  *
  * @param options - Options with sessionId and optional directory
  * @returns Object with messages, loading, error, and refetch
@@ -55,6 +57,10 @@ export function useMessages(options: UseMessagesOptions): UseMessagesReturn {
 	const [messageList, setMessageList] = useState<Message[]>([])
 	const [loading, setLoading] = useState(true)
 	const [error, setError] = useState<Error | null>(null)
+
+	// Track sessionId in ref to avoid stale closures in SSE callback
+	const sessionIdRef = useRef(options.sessionId)
+	sessionIdRef.current = options.sessionId
 
 	const fetch = useCallback(() => {
 		setLoading(true)
@@ -76,9 +82,41 @@ export function useMessages(options: UseMessagesOptions): UseMessagesReturn {
 			})
 	}, [options.sessionId, options.directory])
 
+	// Initial fetch
 	useEffect(() => {
 		fetch()
 	}, [fetch])
+
+	// Subscribe to SSE events for real-time updates
+	useEffect(() => {
+		const unsubscribe = multiServerSSE.onEvent((event) => {
+			const { type, properties } = event.payload
+
+			// Only handle message events for our session
+			if (!type.startsWith("message.")) return
+
+			const messageData = properties.info as Message | undefined
+			if (!messageData) return
+			if (messageData.sessionID !== sessionIdRef.current) return
+
+			if (type === "message.created" || type === "message.updated") {
+				setMessageList((prev) => {
+					// Use binary insert/update for O(log n) performance
+					const { found, index } = Binary.search(prev, messageData.id, (m) => m.id)
+					if (found) {
+						// Update existing message
+						const updated = [...prev]
+						updated[index] = messageData
+						return updated
+					}
+					// Insert new message in sorted position
+					return Binary.insert(prev, messageData, (m) => m.id)
+				})
+			}
+		})
+
+		return unsubscribe
+	}, []) // Empty deps - callback uses refs
 
 	return {
 		messages: messageList,

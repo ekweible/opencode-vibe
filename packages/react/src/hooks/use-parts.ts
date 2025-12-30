@@ -1,8 +1,8 @@
 /**
- * useParts - Bridge Promise API to React state
+ * useParts - Bridge Promise API to React state with SSE updates
  *
  * Wraps parts.list from @opencode-vibe/core/api and manages React state.
- * Provides loading, error, and data states for part list.
+ * Subscribes to SSE events for real-time updates when parts are created/updated.
  *
  * @example
  * ```tsx
@@ -23,8 +23,10 @@
 
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { parts } from "@opencode-vibe/core/api"
+import { multiServerSSE } from "@opencode-vibe/core/sse"
+import { Binary } from "@opencode-vibe/core/utils"
 import type { Part } from "@opencode-vibe/core/types"
 
 export interface UsePartsOptions {
@@ -46,7 +48,7 @@ export interface UsePartsReturn {
 }
 
 /**
- * Hook to fetch part list using Promise API from core
+ * Hook to fetch part list with real-time SSE updates
  *
  * @param options - Options with sessionId and optional directory
  * @returns Object with parts, loading, error, and refetch
@@ -55,6 +57,10 @@ export function useParts(options: UsePartsOptions): UsePartsReturn {
 	const [partList, setPartList] = useState<Part[]>([])
 	const [loading, setLoading] = useState(true)
 	const [error, setError] = useState<Error | null>(null)
+
+	// Track sessionId in ref to avoid stale closures in SSE callback
+	const sessionIdRef = useRef(options.sessionId)
+	sessionIdRef.current = options.sessionId
 
 	const fetch = useCallback(() => {
 		setLoading(true)
@@ -76,9 +82,46 @@ export function useParts(options: UsePartsOptions): UsePartsReturn {
 			})
 	}, [options.sessionId, options.directory])
 
+	// Initial fetch
 	useEffect(() => {
 		fetch()
 	}, [fetch])
+
+	// Subscribe to SSE events for real-time updates
+	useEffect(() => {
+		const unsubscribe = multiServerSSE.onEvent((event) => {
+			const { type, properties } = event.payload
+
+			// Only handle part events
+			if (!type.startsWith("part.")) return
+
+			const partData = properties.part as Part | undefined
+			if (!partData) return
+
+			// Filter by session - parts have messageID, need to check if it belongs to our session
+			// The part object should have sessionID from the message it belongs to
+			// If not available, we accept all parts (will be filtered by messageID in useMessagesWithParts)
+			const partSessionId = (partData as Part & { sessionID?: string }).sessionID
+			if (partSessionId && partSessionId !== sessionIdRef.current) return
+
+			if (type === "part.created" || type === "part.updated") {
+				setPartList((prev) => {
+					// Use binary insert/update for O(log n) performance
+					const { found, index } = Binary.search(prev, partData.id, (p) => p.id)
+					if (found) {
+						// Update existing part
+						const updated = [...prev]
+						updated[index] = partData
+						return updated
+					}
+					// Insert new part in sorted position
+					return Binary.insert(prev, partData, (p) => p.id)
+				})
+			}
+		})
+
+		return unsubscribe
+	}, []) // Empty deps - callback uses refs
 
 	return {
 		parts: partList,
