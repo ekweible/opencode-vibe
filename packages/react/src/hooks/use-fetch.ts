@@ -46,7 +46,7 @@
 
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 
 export interface UseFetchOptions<T> {
 	/** Initial data value (optional) */
@@ -73,8 +73,11 @@ export interface UseFetchReturn<T> {
 /**
  * Generic fetch hook with loading/error/data state management
  *
+ * Uses refs for callbacks and fetcher to avoid infinite loops from
+ * unstable function references in dependency arrays.
+ *
  * @param fetcher - Async function that returns data
- * @param params - Parameters to pass to fetcher
+ * @param params - Parameters to pass to fetcher (should be stable or primitive)
  * @param options - Optional configuration
  * @returns Object with data, loading, error, and refetch
  */
@@ -89,7 +92,20 @@ export function useFetch<T, P = void>(
 	const [loading, setLoading] = useState(enabled)
 	const [error, setError] = useState<Error | null>(null)
 
-	const fetch = useCallback(() => {
+	// Use refs for unstable references to avoid infinite loops
+	const fetcherRef = useRef(fetcher)
+	const paramsRef = useRef(params)
+	const onSuccessRef = useRef(onSuccess)
+	const onErrorRef = useRef(onError)
+
+	// Update refs on each render (synchronously, not in useEffect)
+	fetcherRef.current = fetcher
+	paramsRef.current = params
+	onSuccessRef.current = onSuccess
+	onErrorRef.current = onError
+
+	// Stable fetch function - only depends on `enabled` (primitive)
+	const doFetch = useCallback(() => {
 		if (!enabled) {
 			return
 		}
@@ -97,30 +113,32 @@ export function useFetch<T, P = void>(
 		setLoading(true)
 		setError(null)
 
-		fetcher(params)
+		fetcherRef
+			.current(paramsRef.current)
 			.then((result: T) => {
 				setData(result)
 				setError(null)
-				onSuccess?.(result)
+				onSuccessRef.current?.(result)
 			})
 			.catch((err: unknown) => {
 				const error = err instanceof Error ? err : new Error(String(err))
 				setError(error)
-				onError?.(error)
+				onErrorRef.current?.(error)
 			})
 			.finally(() => {
 				setLoading(false)
 			})
-	}, [fetcher, params, enabled, onSuccess, onError])
+	}, [enabled])
 
+	// Fetch on mount and when enabled changes
 	useEffect(() => {
-		fetch()
-	}, [fetch])
+		doFetch()
+	}, [doFetch])
 
 	return {
 		data,
 		loading,
 		error,
-		refetch: fetch,
+		refetch: doFetch,
 	}
 }
