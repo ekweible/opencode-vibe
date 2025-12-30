@@ -15,7 +15,7 @@ import { useOpencodeStore, type SessionStatusType as SessionStatus } from "@open
 import { useSSE } from "@opencode-vibe/react"
 import { useMultiServerSSE } from "@opencode-vibe/react"
 import { useLiveTime } from "@opencode-vibe/react"
-import { createClient } from "@/core/client"
+import { createClient } from "@/lib/client"
 
 interface SessionDisplay {
 	id: string

@@ -46,14 +46,15 @@
 		"type-check": "tsc --noEmit"
 	},
 	"peerDependencies": {
-		"effect": "^3.19.0"
+		"@opencode-ai/sdk": "^1.0.209"
 	},
 	"devDependencies": {
+		"@opencode-ai/sdk": "^1.0.209",
 		"@types/bun": "latest",
-		"effect": "^3.19.13",
 		"typescript": "^5"
 	},
 	"dependencies": {
+		"effect": "^3.19.0",
 		"eventsource-parser": "^3.0.6"
 	}
 }

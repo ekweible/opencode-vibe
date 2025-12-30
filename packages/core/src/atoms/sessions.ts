@@ -1,124 +1,93 @@
 /**
- * Sessions Atom (Phase 1 - Interim)
+ * Sessions Atom - Pure Effect Programs
  *
- * React hook for session list management with cache invalidation.
- * Phase 1: Wrap SDK calls in hooks (simplified effect-atom pattern)
- * Phase 2: Full effect-atom migration when patterns are stable
+ * Framework-agnostic Effect programs for session management.
+ * Consumers (React hooks) should use Effect.runPromise to execute these programs.
  *
  * Provides:
  * - Session list fetching via SDK
- * - Cache invalidation on SSE events (session.created, session.updated, etc.)
- * - Error handling with empty fallback
+ * - Session get by ID
  * - Sorted by updated time descending (newest first)
  *
  * @module atoms/sessions
  */
 
-"use client"
-
-import { useState, useEffect, useCallback } from "react"
-import { createClient } from "@/core/client"
-import type { Session } from "@opencode-vibe/react"
-import type { GlobalEvent } from "@opencode-ai/sdk/client"
+import { Effect } from "effect"
+import { createClient } from "../client/index.js"
+import type { Session } from "../types/index.js"
 
 /**
- * Session list state
+ * Session atom namespace with Effect programs
  */
-export interface SessionListState {
-	/** List of sessions sorted by updated time descending */
-	sessions: Session[]
-	/** Whether initial fetch is in progress */
-	loading: boolean
-	/** Last error if fetch failed */
-	error: Error | null
-}
-
-/**
- * Hook options
- */
-export interface UseSessionListOptions {
-	/** Project directory to fetch sessions for */
-	directory?: string
-	/** Optional SSE event to trigger cache invalidation */
-	sseEvent?: GlobalEvent | null
-}
-
-/**
- * React hook to fetch and track session list with cache invalidation
- *
- * Features:
- * - Fetches sessions on mount
- * - Refetches when SSE session.* events occur
- * - Sorts by updated time descending (newest first)
- * - Falls back to empty array on error
- *
- * @param options - Hook options (directory, sseEvent)
- * @returns SessionListState with sessions, loading, error
- *
- * @example
- * ```tsx
- * const { sessions, loading, error } = useSessionList({
- *   directory: "/my/project",
- *   sseEvent: latestSSEEvent
- * })
- *
- * if (loading) return <div>Loading sessions...</div>
- * if (error) console.warn("Failed to load sessions:", error)
- *
- * return (
- *   <ul>
- *     {sessions.map(s => <li key={s.id}>{s.title}</li>)}
- *   </ul>
- * )
- * ```
- */
-export function useSessionList(options: UseSessionListOptions = {}): SessionListState {
-	const { directory, sseEvent } = options
-
-	const [sessions, setSessions] = useState<Session[]>([])
-	const [loading, setLoading] = useState(false)
-	const [error, setError] = useState<Error | null>(null)
-
-	// Fetch sessions - stable reference via useCallback
-	const fetchSessions = useCallback(async () => {
-		setLoading(true)
-		setError(null)
-
-		try {
+export const SessionAtom = {
+	/**
+	 * Fetch all sessions for a directory, sorted by updated time descending
+	 *
+	 * @param directory - Project directory (optional)
+	 * @returns Effect program that yields Session[] or Error
+	 *
+	 * @example
+	 * ```typescript
+	 * import { Effect } from "effect"
+	 * import { SessionAtom } from "@opencode/core/atoms"
+	 *
+	 * // Execute the Effect program
+	 * const sessions = await Effect.runPromise(SessionAtom.list("/my/project"))
+	 *
+	 * // Or compose with other Effects
+	 * const program = Effect.gen(function* () {
+	 *   const sessions = yield* SessionAtom.list("/my/project")
+	 *   return sessions.filter(s => s.title.includes("auth"))
+	 * })
+	 * ```
+	 */
+	list: (directory?: string): Effect.Effect<Session[], Error> =>
+		Effect.gen(function* () {
 			const client = createClient(directory)
-			const response = await client.session.list()
+
+			const response = yield* Effect.tryPromise({
+				try: () => client.session.list(),
+				catch: (error) =>
+					new Error(
+						`Failed to fetch sessions: ${error instanceof Error ? error.message : String(error)}`,
+					),
+			})
 
 			// Sort by updated time descending (newest first)
-			const sorted = (response.data || []).sort((a, b) => b.time.updated - a.time.updated)
+			const sessions = response.data || []
+			return sessions.sort((a, b) => b.time.updated - a.time.updated)
+		}),
 
-			setSessions(sorted)
-			setLoading(false)
-		} catch (err) {
-			const errorObj = err instanceof Error ? err : new Error(String(err))
-			setError(errorObj)
-			setSessions([]) // Fallback to empty array on error
-			setLoading(false)
-		}
-	}, [directory])
+	/**
+	 * Fetch a single session by ID
+	 *
+	 * @param id - Session ID
+	 * @param directory - Project directory (optional)
+	 * @returns Effect program that yields Session | null or Error
+	 *
+	 * @example
+	 * ```typescript
+	 * const session = await Effect.runPromise(SessionAtom.get("ses_123"))
+	 * if (session) {
+	 *   console.log(session.title)
+	 * }
+	 * ```
+	 */
+	get: (id: string, directory?: string): Effect.Effect<Session | null, Error> =>
+		Effect.gen(function* () {
+			const client = createClient(directory)
 
-	// Initial fetch on mount (and when directory changes)
-	useEffect(() => {
-		fetchSessions()
-	}, [fetchSessions])
+			const response = yield* Effect.tryPromise({
+				try: () => client.session.get({ path: { id } }),
+				catch: (error) =>
+					new Error(
+						`Failed to fetch session: ${error instanceof Error ? error.message : String(error)}`,
+					),
+			})
 
-	// Cache invalidation: refetch when session.* events occur
-	useEffect(() => {
-		if (!sseEvent) return
-
-		// Only refetch for session-related events
-		// GlobalEvent.payload contains the actual event with { type, properties }
-		if (sseEvent.payload.type.startsWith("session.")) {
-			// Filter by directory if provided
-			if (directory && sseEvent.directory !== directory) return
-
-			fetchSessions()
-		}
-	}, [sseEvent, directory, fetchSessions])
-
-	return { sessions, loading, error }
+			return response.data ?? null
+		}),
 }
+
+// Export types for consumers
+export type { Session }

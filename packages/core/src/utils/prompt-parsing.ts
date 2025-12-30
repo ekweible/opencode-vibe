@@ -1,4 +1,4 @@
-import type { Prompt, TextPart, FileAttachmentPart } from "@/types/prompt"
+import type { Prompt, TextPart, FileAttachmentPart } from "../types/prompt.js"
 
 // Node type constants (for environments without DOM globals)
 const TEXT_NODE = 3

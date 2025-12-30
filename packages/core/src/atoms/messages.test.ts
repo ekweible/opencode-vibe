@@ -1,13 +1,15 @@
 /**
- * Messages Atom Tests
+ * Messages Atom Tests - Effect Programs
  *
- * Tests for message list management with binary search insertion and SSE updates.
+ * Tests for message list management with Effect programs.
  * Following TDD: Write tests first, implement to make them pass.
  */
 
-import { describe, it, expect, beforeEach } from "vitest"
-import { Binary } from "@/lib/binary"
-import type { Message } from "@opencode-vibe/react"
+import { describe, it, expect, vi } from "vitest"
+import { Effect } from "effect"
+import { Binary } from "../utils/binary.js"
+import { MessageAtom } from "./messages.js"
+import type { Message } from "../types/index.js"
 
 /**
  * Factory for creating test messages with minimal fields
@@ -20,6 +22,25 @@ function createMessage(id: string, sessionID: string, role = "user"): Message {
 		time: { created: Date.now() },
 	}
 }
+
+/**
+ * Mock createClient for testing
+ */
+vi.mock("../client/index.js", () => ({
+	createClient: vi.fn((directory?: string) => ({
+		session: {
+			messages: vi.fn(({ path }: { path: { id: string } }) =>
+				Promise.resolve({
+					data: [
+						{ info: createMessage("msg-a", path.id), parts: [] },
+						{ info: createMessage("msg-c", path.id), parts: [] },
+						{ info: createMessage("msg-e", path.id), parts: [] },
+					],
+				}),
+			),
+		},
+	})),
+}))
 
 describe("Binary search utilities", () => {
 	it("should find existing message by ID", () => {
@@ -146,6 +167,133 @@ describe("Binary search performance", () => {
 	})
 })
 
+describe("MessageAtom.list Effect program", () => {
+	it("fetches messages for a session", async () => {
+		const messages = await Effect.runPromise(MessageAtom.list("session-1"))
+
+		expect(messages).toHaveLength(3)
+		expect(messages[0]?.id).toBe("msg-a")
+		expect(messages[1]?.id).toBe("msg-c")
+		expect(messages[2]?.id).toBe("msg-e")
+	})
+
+	it("sorts messages by ID (lexicographically)", async () => {
+		const { createClient } = await import("../client/index.js")
+
+		vi.mocked(createClient).mockReturnValueOnce({
+			session: {
+				messages: vi.fn(() =>
+					Promise.resolve({
+						data: [
+							{ info: createMessage("msg-z", "session-1"), parts: [] },
+							{ info: createMessage("msg-a", "session-1"), parts: [] },
+							{ info: createMessage("msg-m", "session-1"), parts: [] },
+						],
+					}),
+				),
+			},
+		} as any)
+
+		const messages = await Effect.runPromise(MessageAtom.list("session-1"))
+
+		expect(messages[0]?.id).toBe("msg-a")
+		expect(messages[1]?.id).toBe("msg-m")
+		expect(messages[2]?.id).toBe("msg-z")
+	})
+
+	it("handles empty message list", async () => {
+		const { createClient } = await import("../client/index.js")
+
+		vi.mocked(createClient).mockReturnValueOnce({
+			session: {
+				messages: vi.fn(() => Promise.resolve({ data: [] })),
+			},
+		} as any)
+
+		const messages = await Effect.runPromise(MessageAtom.list("session-1"))
+
+		expect(messages).toHaveLength(0)
+	})
+
+	it("handles null/undefined data gracefully", async () => {
+		const { createClient } = await import("../client/index.js")
+
+		vi.mocked(createClient).mockReturnValueOnce({
+			session: {
+				messages: vi.fn(() => Promise.resolve({ data: null })),
+			},
+		} as any)
+
+		const messages = await Effect.runPromise(MessageAtom.list("session-1"))
+
+		expect(messages).toHaveLength(0)
+	})
+
+	it("propagates errors through Effect error channel", async () => {
+		const { createClient } = await import("../client/index.js")
+
+		vi.mocked(createClient).mockReturnValueOnce({
+			session: {
+				messages: vi.fn(() => Promise.reject(new Error("Network error"))),
+			},
+		} as any)
+
+		await expect(Effect.runPromise(MessageAtom.list("session-1"))).rejects.toThrow(
+			"Failed to fetch messages",
+		)
+	})
+})
+
+describe("MessageAtom.get Effect program", () => {
+	it("fetches single message by ID", async () => {
+		const message = await Effect.runPromise(MessageAtom.get("session-1", "msg-c"))
+
+		expect(message).not.toBeNull()
+		expect(message?.id).toBe("msg-c")
+		expect(message?.sessionID).toBe("session-1")
+	})
+
+	it("returns null when message not found", async () => {
+		const message = await Effect.runPromise(MessageAtom.get("session-1", "msg-nonexistent"))
+
+		expect(message).toBeNull()
+	})
+})
+
+describe("MessageAtom composability", () => {
+	it("can be composed with other Effect programs", async () => {
+		const program = Effect.gen(function* () {
+			const messages = yield* MessageAtom.list("session-1")
+			// Filter messages by role
+			return messages.filter((m) => m.role === "user")
+		})
+
+		const filtered = await Effect.runPromise(program)
+
+		// All test messages have role="user" by default
+		expect(filtered).toHaveLength(3)
+	})
+
+	it("supports Effect error handling combinators", async () => {
+		const { createClient } = await import("../client/index.js")
+
+		vi.mocked(createClient).mockReturnValueOnce({
+			session: {
+				messages: vi.fn(() => Promise.reject(new Error("Network error"))),
+			},
+		} as any)
+
+		// Use Effect.catchAll to provide fallback
+		const program = MessageAtom.list("session-1").pipe(
+			Effect.catchAll(() => Effect.succeed([] as Message[])),
+		)
+
+		const messages = await Effect.runPromise(program)
+
+		expect(messages).toHaveLength(0)
+	})
+})
+
 describe("Message list operations", () => {
 	it("should handle messages with ULID IDs (sortable)", () => {
 		// ULIDs are lexicographically sortable by timestamp
@@ -188,7 +336,3 @@ describe("Message list operations", () => {
 		expect(messages[result.index]?.sessionID).toBe("session-2")
 	})
 })
-
-// Note: Tests for useMessages hook will be added in future phase
-// when integration with Zustand store is implemented.
-// Current phase focuses on binary search utilities which are already tested above.

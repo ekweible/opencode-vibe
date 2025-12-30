@@ -25,7 +25,7 @@
  */
 
 import { useCallback, useEffect, useState } from "react"
-import { globalClient } from "../core/client"
+import { globalClient } from "@/lib/client"
 import { useSSE } from "./use-sse"
 
 /**

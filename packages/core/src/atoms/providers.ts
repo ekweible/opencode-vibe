@@ -1,22 +1,19 @@
 /**
- * Provider Atoms (Phase 1 - Interim)
+ * Provider Atoms
  *
- * React hooks for AI provider management using SDK directly.
- * Phase 1: Simple SDK wrapper hooks (no Effect service yet)
- * Phase 2: May migrate to Effect service pattern if needed
+ * Pure Effect programs for AI provider management.
+ * Framework-agnostic - no React dependencies.
  *
  * Provides:
- * - Provider list fetching from SDK
+ * - Provider list fetching as Effect program
  * - Model enumeration per provider
- * - React hooks for easy consumption
+ * - Type-safe transformations
  *
  * @module atoms/providers
  */
 
-"use client"
-
-import { useState, useEffect } from "react"
-import { globalClient } from "../core/client"
+import { Effect } from "effect"
+import { globalClient } from "../client/index.js"
 
 /**
  * AI model information
@@ -58,71 +55,35 @@ function transformProvider(rawProvider: any): Provider {
 }
 
 /**
- * React hook to fetch and track AI providers
+ * Provider atom namespace
  *
- * Fetches provider list from SDK on mount.
- * Includes all available providers with their models.
- *
- * @returns Object with providers array, loading boolean, and error
- *
- * @example
- * ```tsx
- * const { providers, loading, error } = useProviders()
- * if (loading) return <div>Loading providers...</div>
- * if (error) return <div>Error: {error.message}</div>
- * return (
- *   <select>
- *     {providers.flatMap(p =>
- *       p.models.map(m => (
- *         <option key={`${p.id}-${m.id}`} value={m.id}>
- *           {p.name} - {m.name}
- *         </option>
- *       ))
- *     )}
- *   </select>
- * )
- * ```
+ * Pure Effect programs for provider operations.
+ * Use with Effect.runPromise in React hooks.
  */
-export function useProviders() {
-	const [providers, setProviders] = useState<Provider[]>([])
-	const [loading, setLoading] = useState(false)
-	const [error, setError] = useState<Error | null>(null)
+export const ProviderAtom = {
+	/**
+	 * Fetch all AI providers with their models
+	 *
+	 * @returns Effect program yielding Provider array
+	 *
+	 * @example
+	 * ```typescript
+	 * // In React hook:
+	 * Effect.runPromise(ProviderAtom.list())
+	 *   .then(providers => setState({ providers, loading: false }))
+	 *   .catch(error => setState({ error, loading: false }))
+	 * ```
+	 */
+	list: (): Effect.Effect<Provider[], Error> =>
+		Effect.gen(function* () {
+			const result = yield* Effect.tryPromise({
+				try: () => globalClient.provider.list(),
+				catch: (e) => new Error(`Failed to fetch providers: ${e}`),
+			})
 
-	useEffect(() => {
-		let cancelled = false
-
-		const fetchProviders = async () => {
-			setLoading(true)
-			setError(null)
-
-			try {
-				// Fetch from SDK
-				const response = await globalClient.provider.list()
-
-				if (cancelled) return
-
-				// Transform SDK response
-				// SDK returns: { all: Provider[], default: Provider, connected: string[] }
-				const rawProviders = response.data?.all ?? []
-				const transformed = rawProviders.map(transformProvider)
-
-				setProviders(transformed)
-				setLoading(false)
-			} catch (err) {
-				if (cancelled) return
-
-				setError(err instanceof Error ? err : new Error(String(err)))
-				setProviders([])
-				setLoading(false)
-			}
-		}
-
-		fetchProviders()
-
-		return () => {
-			cancelled = true
-		}
-	}, [])
-
-	return { providers, loading, error }
+			// Transform SDK response
+			// SDK returns: { all: Provider[], default: Provider, connected: string[] }
+			const rawProviders = result.data?.all ?? []
+			return rawProviders.map(transformProvider)
+		}),
 }

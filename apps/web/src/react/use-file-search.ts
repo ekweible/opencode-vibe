@@ -28,7 +28,7 @@
 
 import { useState, useEffect, useRef } from "react"
 import { useOpenCode } from "@opencode-vibe/react"
-import { createClient } from "@/core/client"
+import { createClient } from "@/lib/client"
 import fuzzysort from "fuzzysort"
 
 export interface UseFileSearchOptions {

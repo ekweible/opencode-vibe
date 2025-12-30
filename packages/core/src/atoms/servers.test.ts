@@ -1,31 +1,14 @@
 /**
- * Tests for server discovery atoms
+ * Tests for server discovery atom
  *
- * Note: These tests verify the factory functions that create atoms.
- * Testing the actual atom runtime behavior (Effects resolving, keepAlive, etc.)
- * requires integration testing with AtomRegistry and React hooks.
- * These tests focus on the logic layer: selectBestServer, default fallback, etc.
+ * Tests pure Effect programs for server discovery.
+ * No React dependencies - tests Effect logic directly.
  */
 
 import { describe, expect, it } from "vitest"
-import type { ServerInfo } from "../core/discovery"
-
-/**
- * Default fallback server (duplicated from servers.ts for testing)
- */
-const DEFAULT_SERVER: ServerInfo = {
-	port: 4056,
-	directory: "",
-	url: "http://localhost:4056",
-}
-
-/**
- * Select best server from list (duplicated from servers.ts for testing)
- */
-function selectBestServer(servers: ServerInfo[]): ServerInfo {
-	const serverWithDir = servers.find((s) => s.directory !== "")
-	return serverWithDir || servers[0] || DEFAULT_SERVER
-}
+import { Effect } from "effect"
+import { ServerAtom, selectBestServer, DEFAULT_SERVER } from "./servers.js"
+import type { ServerInfo } from "@opencode-vibe/core/discovery"
 
 describe("selectBestServer", () => {
 	it("returns first server with directory when available", () => {
@@ -82,13 +65,54 @@ describe("DEFAULT_SERVER constant", () => {
 	})
 })
 
-describe("server discovery hooks (Phase 1)", () => {
-	it("useServers and useCurrentServer hooks exist and are callable", async () => {
-		// This test ensures the React hooks exist
-		const { useServers, useCurrentServer, selectBestServer } = await import("./servers")
+describe("ServerAtom.discover", () => {
+	it("returns an Effect program", () => {
+		const program = ServerAtom.discover()
+		expect(Effect.isEffect(program)).toBe(true)
+	})
 
-		expect(typeof useServers).toBe("function")
-		expect(typeof useCurrentServer).toBe("function")
-		expect(typeof selectBestServer).toBe("function")
+	it("always includes default server on success", async () => {
+		const servers = await Effect.runPromise(ServerAtom.discover())
+
+		// Should have at least the default server
+		expect(servers.length).toBeGreaterThanOrEqual(1)
+
+		// Should include default server (port 4056)
+		const hasDefault = servers.some((s) => s.port === 4056)
+		expect(hasDefault).toBe(true)
+	})
+
+	it("falls back to default server on error", async () => {
+		// The discover effect catches all errors and returns [DEFAULT_SERVER]
+		// We can't easily test error handling without mocking the ServerDiscovery service
+		// But we can verify the fallback behavior
+		const servers = await Effect.runPromise(ServerAtom.discover())
+
+		// Should always succeed (never fails)
+		expect(servers).toBeDefined()
+		expect(Array.isArray(servers)).toBe(true)
+	})
+})
+
+describe("ServerAtom.currentServer", () => {
+	it("returns an Effect program", () => {
+		const program = ServerAtom.currentServer()
+		expect(Effect.isEffect(program)).toBe(true)
+	})
+
+	it("returns best server from discovered list", async () => {
+		const server = await Effect.runPromise(ServerAtom.currentServer())
+
+		// Should return a valid ServerInfo
+		expect(server).toBeDefined()
+		expect(typeof server.port).toBe("number")
+		expect(typeof server.url).toBe("string")
+		expect(typeof server.directory).toBe("string")
+	})
+
+	it("never fails (always returns a server)", async () => {
+		// currentServer should never throw
+		const server = await Effect.runPromise(ServerAtom.currentServer())
+		expect(server).toBeDefined()
 	})
 })

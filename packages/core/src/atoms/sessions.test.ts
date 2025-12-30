@@ -1,15 +1,16 @@
 /**
- * Tests for sessions atom with cache invalidation
+ * Tests for sessions atom Effect programs
  *
  * Tests verify:
- * - Session list fetching via SDK
- * - Cache invalidation on SSE events
- * - Error handling with empty fallback
- * - Factory pattern for testability
+ * - Session list fetching via Effect.runPromise
+ * - Error handling with Effect error channel
+ * - Sorting by updated time descending
  */
 
-import { describe, expect, it, vi } from "vitest"
-import type { Session } from "../react/store"
+import { describe, expect, it, vi, beforeEach } from "vitest"
+import { Effect } from "effect"
+import { SessionAtom } from "./sessions.js"
+import type { Session } from "../types/index.js"
 
 /**
  * Mock session factory
@@ -28,114 +29,182 @@ function createMockSession(overrides?: Partial<Session>): Session {
 }
 
 /**
- * Mock OpencodeClient for testing
+ * Mock createClient for testing
+ * This is a simplified mock - in real usage, we'd use dependency injection
  */
-function createMockClient(sessions: Session[] = []) {
-	return {
+vi.mock("../client/index.js", () => ({
+	createClient: vi.fn((directory?: string) => ({
 		session: {
-			list: vi.fn(() => Promise.resolve({ data: sessions })),
+			list: vi.fn(() =>
+				Promise.resolve({
+					data: [
+						createMockSession({ id: "ses_1", title: "Session 1" }),
+						createMockSession({ id: "ses_2", title: "Session 2" }),
+					],
+				}),
+			),
+			get: vi.fn(({ path }: { path: { id: string } }) =>
+				Promise.resolve({
+					data: createMockSession({ id: path.id, title: `Session ${path.id}` }),
+				}),
+			),
 		},
-	}
-}
+	})),
+}))
 
-describe("session list hook behavior", () => {
-	it("fetches session list on mount", async () => {
-		const mockSessions = [
-			createMockSession({ id: "ses_1", title: "Session 1" }),
-			createMockSession({ id: "ses_2", title: "Session 2" }),
-		]
+describe("SessionAtom.list Effect program", () => {
+	it("fetches session list successfully", async () => {
+		const sessions = await Effect.runPromise(SessionAtom.list("/test/project"))
 
-		const mockClient = createMockClient(mockSessions)
-
-		// Call the mock client directly to verify behavior
-		const result = await mockClient.session.list()
-
-		expect(result.data).toHaveLength(2)
-		expect(result.data?.[0]?.id).toBe("ses_1")
-		expect(result.data?.[1]?.id).toBe("ses_2")
-		expect(mockClient.session.list).toHaveBeenCalledTimes(1)
+		expect(sessions).toHaveLength(2)
+		expect(sessions[0]?.id).toBe("ses_1")
+		expect(sessions[1]?.id).toBe("ses_2")
 	})
 
-	it("returns empty array on error", async () => {
-		const mockClient = {
-			session: {
-				list: vi.fn(() => Promise.reject(new Error("Network error"))),
-			},
-		}
+	it("sorts sessions by updated time descending (newest first)", async () => {
+		// Re-mock createClient with specific timestamps
+		const now = Date.now()
+		const { createClient } = await import("../client/index.js")
 
-		try {
-			await mockClient.session.list()
-			expect(false).toBe(true) // Should not reach here
-		} catch (error) {
-			expect(error).toBeInstanceOf(Error)
-			expect((error as Error).message).toBe("Network error")
-		}
+		vi.mocked(createClient).mockReturnValueOnce({
+			session: {
+				list: vi.fn(() =>
+					Promise.resolve({
+						data: [
+							createMockSession({
+								id: "ses_1",
+								time: { created: now, updated: now - 3000 },
+							}),
+							createMockSession({
+								id: "ses_2",
+								time: { created: now, updated: now - 1000 },
+							}),
+							createMockSession({
+								id: "ses_3",
+								time: { created: now, updated: now - 2000 },
+							}),
+						],
+					}),
+				),
+			},
+		} as any)
+
+		const sessions = await Effect.runPromise(SessionAtom.list())
+
+		// Should be sorted newest first
+		expect(sessions[0]?.id).toBe("ses_2") // Most recent (now - 1000)
+		expect(sessions[1]?.id).toBe("ses_3") // Middle (now - 2000)
+		expect(sessions[2]?.id).toBe("ses_1") // Oldest (now - 3000)
 	})
 
 	it("handles empty session list", async () => {
-		const mockClient = createMockClient([])
+		const { createClient } = await import("../client/index.js")
 
-		const result = await mockClient.session.list()
+		vi.mocked(createClient).mockReturnValueOnce({
+			session: {
+				list: vi.fn(() => Promise.resolve({ data: [] })),
+			},
+		} as any)
 
-		expect(result.data).toHaveLength(0)
+		const sessions = await Effect.runPromise(SessionAtom.list())
+
+		expect(sessions).toHaveLength(0)
+	})
+
+	it("handles null/undefined data gracefully", async () => {
+		const { createClient } = await import("../client/index.js")
+
+		vi.mocked(createClient).mockReturnValueOnce({
+			session: {
+				list: vi.fn(() => Promise.resolve({ data: null })),
+			},
+		} as any)
+
+		const sessions = await Effect.runPromise(SessionAtom.list())
+
+		expect(sessions).toHaveLength(0)
+	})
+
+	it("propagates errors through Effect error channel", async () => {
+		const { createClient } = await import("../client/index.js")
+
+		vi.mocked(createClient).mockReturnValueOnce({
+			session: {
+				list: vi.fn(() => Promise.reject(new Error("Network error"))),
+			},
+		} as any)
+
+		// Effect.runPromise throws on error
+		await expect(Effect.runPromise(SessionAtom.list())).rejects.toThrow("Failed to fetch sessions")
 	})
 })
 
-describe("session cache invalidation", () => {
-	it("should refetch sessions when session.created event occurs", () => {
-		// This tests the logic that determines when to refetch
-		// In the actual implementation, SSE events trigger refetch
-		const eventType = "session.created"
-		const shouldRefetch = eventType.startsWith("session.")
+describe("SessionAtom.get Effect program", () => {
+	it("fetches single session by ID", async () => {
+		const session = await Effect.runPromise(SessionAtom.get("ses_123"))
 
-		expect(shouldRefetch).toBe(true)
+		expect(session).not.toBeNull()
+		expect(session?.id).toBe("ses_123")
+		expect(session?.title).toBe("Session ses_123")
 	})
 
-	it("should refetch sessions when session.updated event occurs", () => {
-		const eventType = "session.updated"
-		const shouldRefetch = eventType.startsWith("session.")
+	it("returns null when session not found", async () => {
+		const { createClient } = await import("../client/index.js")
 
-		expect(shouldRefetch).toBe(true)
+		vi.mocked(createClient).mockReturnValueOnce({
+			session: {
+				get: vi.fn(() => Promise.resolve({ data: null })),
+			},
+		} as any)
+
+		const session = await Effect.runPromise(SessionAtom.get("nonexistent"))
+
+		expect(session).toBeNull()
 	})
 
-	it("should not refetch sessions for non-session events", () => {
-		const eventType = "message.created"
-		const shouldRefetch = eventType.startsWith("session.")
+	it("propagates errors through Effect error channel", async () => {
+		const { createClient } = await import("../client/index.js")
 
-		expect(shouldRefetch).toBe(false)
-	})
-})
+		vi.mocked(createClient).mockReturnValueOnce({
+			session: {
+				get: vi.fn(() => Promise.reject(new Error("Network error"))),
+			},
+		} as any)
 
-describe("session list sorting", () => {
-	it("sorts sessions by updated time descending (newest first)", () => {
-		const now = Date.now()
-		const sessions = [
-			createMockSession({
-				id: "ses_1",
-				time: { created: now, updated: now - 3000 },
-			}),
-			createMockSession({
-				id: "ses_2",
-				time: { created: now, updated: now - 1000 },
-			}),
-			createMockSession({
-				id: "ses_3",
-				time: { created: now, updated: now - 2000 },
-			}),
-		]
-
-		// Sort by updated time descending
-		const sorted = [...sessions].sort((a, b) => b.time.updated - a.time.updated)
-
-		expect(sorted[0]?.id).toBe("ses_2") // Most recent
-		expect(sorted[1]?.id).toBe("ses_3")
-		expect(sorted[2]?.id).toBe("ses_1") // Least recent
+		await expect(Effect.runPromise(SessionAtom.get("ses_123"))).rejects.toThrow(
+			"Failed to fetch session",
+		)
 	})
 })
 
-describe("sessions atom factory exists", () => {
-	it("exports useSessionList hook", async () => {
-		const { useSessionList } = await import("./sessions")
-		expect(typeof useSessionList).toBe("function")
+describe("SessionAtom composability", () => {
+	it("can be composed with other Effect programs", async () => {
+		const program = Effect.gen(function* () {
+			const sessions = yield* SessionAtom.list("/test/project")
+			// Filter sessions with "Session 1" in title
+			return sessions.filter((s) => s.title.includes("Session 1"))
+		})
+
+		const filtered = await Effect.runPromise(program)
+
+		expect(filtered).toHaveLength(1)
+		expect(filtered[0]?.title).toBe("Session 1")
+	})
+
+	it("supports Effect error handling combinators", async () => {
+		const { createClient } = await import("../client/index.js")
+
+		vi.mocked(createClient).mockReturnValueOnce({
+			session: {
+				list: vi.fn(() => Promise.reject(new Error("Network error"))),
+			},
+		} as any)
+
+		// Use Effect.catchAll to provide fallback
+		const program = SessionAtom.list().pipe(Effect.catchAll(() => Effect.succeed([] as Session[])))
+
+		const sessions = await Effect.runPromise(program)
+
+		expect(sessions).toHaveLength(0)
 	})
 })

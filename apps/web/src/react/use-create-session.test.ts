@@ -68,7 +68,7 @@ describe("useCreateSession - caller contract", () => {
 
 		expect(session).toBeNull()
 		expect(error).toBeInstanceOf(Error)
-		expect(error?.message).toBe("String error")
+		expect(error!.message).toBe("String error")
 	})
 
 	test("error handling preserves Error instances", async () => {

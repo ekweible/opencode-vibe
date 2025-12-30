@@ -1,9 +1,8 @@
 /**
- * SSE Connection Atom (Phase 1 - Interim)
+ * SSE Connection Atom (Effect Program)
  *
- * React hooks for SSE connection management using Effect.Stream directly.
- * Phase 1: Wrap Effect Stream in hooks (use effect-atom patterns but simplified)
- * Phase 2: Full effect-atom migration when patterns are stable
+ * Pure Effect programs for SSE connection management.
+ * No React dependencies - usable in any Effect runtime.
  *
  * Provides:
  * - Automatic reconnection with exponential backoff
@@ -14,25 +13,8 @@
  * @module atoms/sse
  */
 
-"use client"
-
-import { useState, useEffect, useRef } from "react"
 import { Effect, Stream, Schedule, Duration } from "effect"
 import type { GlobalEvent } from "@opencode-ai/sdk/client"
-
-/**
- * SSE connection state
- */
-export interface SSEConnectionState {
-	/** Whether SSE is currently connected */
-	connected: boolean
-	/** Latest event received */
-	latestEvent: GlobalEvent | null
-	/** Last connection error */
-	error: Error | null
-	/** Number of reconnection attempts */
-	retryCount: number
-}
 
 /**
  * SSE Configuration
@@ -122,27 +104,76 @@ function makeEventSourceStream(
 }
 
 /**
- * Factory function to create SSE atom with injectable config (for testing)
+ * SSE Atom
  *
- * This returns an object that can be used to create hooks, maintaining
- * compatibility with the atom pattern while using hooks internally.
+ * Pure Effect programs for SSE connection management.
+ */
+export const SSEAtom = {
+	/**
+	 * Connect to SSE stream with automatic reconnection
+	 *
+	 * Creates a resilient SSE connection that:
+	 * - Monitors heartbeat (60s timeout)
+	 * - Reconnects on failure with exponential backoff
+	 * - Parses GlobalEvent JSON
+	 *
+	 * Note: Retry logic should be handled at the consumption level,
+	 * not at the stream creation level. Use Stream.retry when consuming.
+	 *
+	 * @param config - SSE configuration
+	 * @returns Stream of GlobalEvents
+	 *
+	 * @example
+	 * ```typescript
+	 * const stream = SSEAtom.connect({ url: "http://localhost:4056" })
+	 *
+	 * // Consume events with retry
+	 * await Effect.runPromise(
+	 *   Stream.runForEach(stream, (event) =>
+	 *     Effect.sync(() => console.log("Event:", event))
+	 *   ).pipe(Effect.retry(Schedule.exponential(Duration.seconds(3))))
+	 * )
+	 * ```
+	 */
+	connect: (config: SSEConfig): Stream.Stream<GlobalEvent, Error> => {
+		const { url, heartbeatTimeout = DEFAULT_HEARTBEAT_TIMEOUT, createEventSource } = config
+
+		const endpoint = `${url}/global/event`
+
+		// Create stream with heartbeat monitoring
+		return makeEventSourceStream(endpoint, createEventSource, heartbeatTimeout)
+	},
+
+	/**
+	 * Create a simple SSE connection without retry logic
+	 *
+	 * Useful for testing or when you want to handle reconnection yourself.
+	 *
+	 * @param config - SSE configuration
+	 * @returns Stream of GlobalEvents (fails on error, no retry)
+	 *
+	 * @example
+	 * ```typescript
+	 * const stream = SSEAtom.connectOnce({ url: "http://localhost:4056" })
+	 * ```
+	 */
+	connectOnce: (config: SSEConfig): Stream.Stream<GlobalEvent, Error> => {
+		const { url, heartbeatTimeout = DEFAULT_HEARTBEAT_TIMEOUT, createEventSource } = config
+
+		const endpoint = `${url}/global/event`
+
+		return makeEventSourceStream(endpoint, createEventSource, heartbeatTimeout)
+	},
+}
+
+/**
+ * Factory function to create SSE atom config (for backwards compatibility)
  *
  * @param config - SSE configuration
- * @returns Object with connection management
+ * @returns Config object
  */
 export function makeSSEAtom(config: SSEConfig) {
-	const {
-		url,
-		heartbeatTimeout = DEFAULT_HEARTBEAT_TIMEOUT,
-		retrySchedule = DEFAULT_RETRY_SCHEDULE,
-		createEventSource,
-	} = config
-
-	// For testing, we just need to return a stable object
-	// The actual connection happens in the hook
-	return {
-		config: { url, heartbeatTimeout, retrySchedule, createEventSource },
-	}
+	return { config }
 }
 
 /**
@@ -151,102 +182,3 @@ export function makeSSEAtom(config: SSEConfig) {
 export const sseAtom = makeSSEAtom({
 	url: process.env.NEXT_PUBLIC_OPENCODE_URL ?? "http://localhost:4056",
 })
-
-/**
- * React hook to access SSE connection state
- *
- * Manages SSE connection lifecycle using Effect.Stream with:
- * - Automatic reconnection via retry schedule
- * - Heartbeat monitoring
- * - Event streaming
- *
- * @param atomConfig - Optional atom config (defaults to sseAtom)
- * @returns SSEConnectionState
- *
- * @example
- * ```tsx
- * const connection = useSSEConnection()
- * console.log("Connected:", connection.connected)
- * console.log("Latest event:", connection.latestEvent)
- * ```
- */
-export function useSSEConnection(
-	atomConfig: ReturnType<typeof makeSSEAtom> = sseAtom,
-): SSEConnectionState {
-	const [state, setState] = useState<SSEConnectionState>({
-		connected: false,
-		latestEvent: null,
-		error: null,
-		retryCount: 0,
-	})
-
-	const cancelledRef = useRef(false)
-	const retryCountRef = useRef(0)
-
-	useEffect(() => {
-		cancelledRef.current = false
-		retryCountRef.current = 0
-
-		const { url, heartbeatTimeout, createEventSource } = atomConfig.config
-
-		const connect = async () => {
-			while (!cancelledRef.current) {
-				const endpoint = `${url}/global/event`
-
-				try {
-					// Create stream with heartbeat monitoring
-					const stream = makeEventSourceStream(endpoint, createEventSource, heartbeatTimeout)
-
-					// Mark as connected when stream starts
-					if (!cancelledRef.current) {
-						setState((prev) => ({
-							...prev,
-							connected: true,
-							error: null,
-							retryCount: 0,
-						}))
-						retryCountRef.current = 0
-					}
-
-					// Run the stream and update state on each event
-					await Effect.runPromise(
-						Stream.runForEach(stream, (event) =>
-							Effect.sync(() => {
-								if (!cancelledRef.current) {
-									setState((prev) => ({
-										...prev,
-										latestEvent: event,
-										connected: true,
-										error: null,
-									}))
-								}
-							}),
-						),
-					)
-				} catch (error) {
-					if (!cancelledRef.current) {
-						retryCountRef.current++
-						setState((prev) => ({
-							...prev,
-							connected: false,
-							error: error instanceof Error ? error : new Error(String(error)),
-							retryCount: retryCountRef.current,
-						}))
-
-						// Exponential backoff: 3s, 6s, 12s, 24s, capped at 30s
-						const backoffMs = Math.min(3000 * 2 ** retryCountRef.current, 30000)
-						await new Promise((resolve) => setTimeout(resolve, backoffMs))
-					}
-				}
-			}
-		}
-
-		connect()
-
-		return () => {
-			cancelledRef.current = true
-		}
-	}, [atomConfig])
-
-	return state
-}

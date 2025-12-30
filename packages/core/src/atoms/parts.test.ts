@@ -1,13 +1,15 @@
 /**
- * Parts Atom Tests
+ * Parts Atom Tests - Effect Programs
  *
- * Tests for part list management with binary search insertion and SSE updates.
+ * Tests for part list management with Effect programs.
  * Following TDD: Write tests first, implement to make them pass.
  */
 
-import { describe, it, expect } from "vitest"
-import { Binary } from "@/lib/binary"
-import type { Part } from "@opencode-vibe/react"
+import { describe, it, expect, vi } from "vitest"
+import { Effect } from "effect"
+import { Binary } from "../utils/binary.js"
+import { PartAtom } from "./parts.js"
+import type { Part } from "../types/index.js"
 
 /**
  * Factory for creating test parts with minimal fields
@@ -20,6 +22,30 @@ function createPart(id: string, messageID: string, type = "text", content = ""):
 		content,
 	}
 }
+
+/**
+ * Mock createClient for testing
+ */
+vi.mock("../client/index.js", () => ({
+	createClient: vi.fn((directory?: string) => ({
+		session: {
+			messages: vi.fn(({ path }: { path: { id: string } }) =>
+				Promise.resolve({
+					data: [
+						{
+							info: { id: "msg-1", sessionID: path.id },
+							parts: [createPart("part-a", "msg-1"), createPart("part-b", "msg-1")],
+						},
+						{
+							info: { id: "msg-2", sessionID: path.id },
+							parts: [createPart("part-c", "msg-2")],
+						},
+					],
+				}),
+			),
+		},
+	})),
+}))
 
 describe("Binary search utilities for parts", () => {
 	it("should find existing part by ID", () => {
@@ -137,6 +163,161 @@ describe("Binary search performance", () => {
 	})
 })
 
+describe("PartAtom.list Effect program", () => {
+	it("fetches parts for a session", async () => {
+		const parts = await Effect.runPromise(PartAtom.list("session-1"))
+
+		expect(parts).toHaveLength(3)
+		expect(parts[0]?.id).toBe("part-a")
+		expect(parts[1]?.id).toBe("part-b")
+		expect(parts[2]?.id).toBe("part-c")
+	})
+
+	it("sorts parts by ID (lexicographically)", async () => {
+		const { createClient } = await import("../client/index.js")
+
+		vi.mocked(createClient).mockReturnValueOnce({
+			session: {
+				messages: vi.fn(() =>
+					Promise.resolve({
+						data: [
+							{
+								info: { id: "msg-1", sessionID: "session-1" },
+								parts: [createPart("part-z", "msg-1"), createPart("part-a", "msg-1")],
+							},
+							{
+								info: { id: "msg-2", sessionID: "session-1" },
+								parts: [createPart("part-m", "msg-2")],
+							},
+						],
+					}),
+				),
+			},
+		} as any)
+
+		const parts = await Effect.runPromise(PartAtom.list("session-1"))
+
+		expect(parts[0]?.id).toBe("part-a")
+		expect(parts[1]?.id).toBe("part-m")
+		expect(parts[2]?.id).toBe("part-z")
+	})
+
+	it("handles empty part list", async () => {
+		const { createClient } = await import("../client/index.js")
+
+		vi.mocked(createClient).mockReturnValueOnce({
+			session: {
+				messages: vi.fn(() => Promise.resolve({ data: [] })),
+			},
+		} as any)
+
+		const parts = await Effect.runPromise(PartAtom.list("session-1"))
+
+		expect(parts).toHaveLength(0)
+	})
+
+	it("handles messages with no parts", async () => {
+		const { createClient } = await import("../client/index.js")
+
+		vi.mocked(createClient).mockReturnValueOnce({
+			session: {
+				messages: vi.fn(() =>
+					Promise.resolve({
+						data: [
+							{
+								info: { id: "msg-1", sessionID: "session-1" },
+								parts: [],
+							},
+						],
+					}),
+				),
+			},
+		} as any)
+
+		const parts = await Effect.runPromise(PartAtom.list("session-1"))
+
+		expect(parts).toHaveLength(0)
+	})
+
+	it("handles null/undefined data gracefully", async () => {
+		const { createClient } = await import("../client/index.js")
+
+		vi.mocked(createClient).mockReturnValueOnce({
+			session: {
+				messages: vi.fn(() => Promise.resolve({ data: null })),
+			},
+		} as any)
+
+		const parts = await Effect.runPromise(PartAtom.list("session-1"))
+
+		expect(parts).toHaveLength(0)
+	})
+
+	it("propagates errors through Effect error channel", async () => {
+		const { createClient } = await import("../client/index.js")
+
+		vi.mocked(createClient).mockReturnValueOnce({
+			session: {
+				messages: vi.fn(() => Promise.reject(new Error("Network error"))),
+			},
+		} as any)
+
+		await expect(Effect.runPromise(PartAtom.list("session-1"))).rejects.toThrow(
+			"Failed to fetch parts",
+		)
+	})
+})
+
+describe("PartAtom.get Effect program", () => {
+	it("fetches single part by ID", async () => {
+		const part = await Effect.runPromise(PartAtom.get("session-1", "part-b"))
+
+		expect(part).not.toBeNull()
+		expect(part?.id).toBe("part-b")
+		expect(part?.messageID).toBe("msg-1")
+	})
+
+	it("returns null when part not found", async () => {
+		const part = await Effect.runPromise(PartAtom.get("session-1", "part-nonexistent"))
+
+		expect(part).toBeNull()
+	})
+})
+
+describe("PartAtom composability", () => {
+	it("can be composed with other Effect programs", async () => {
+		const program = Effect.gen(function* () {
+			const parts = yield* PartAtom.list("session-1")
+			// Filter parts by type
+			return parts.filter((p) => p.type === "text")
+		})
+
+		const filtered = await Effect.runPromise(program)
+
+		// All test parts have type="text" by default
+		expect(filtered).toHaveLength(3)
+	})
+
+	it("supports Effect error handling combinators", async () => {
+		const { createClient } = await import("../client/index.js")
+
+		vi.mocked(createClient).mockReturnValueOnce({
+			session: {
+				messages: vi.fn(() => Promise.reject(new Error("Network error"))),
+			},
+		} as any)
+
+		// Use Effect.catchAll to provide fallback
+		const program = PartAtom.list("session-1").pipe(
+			Effect.catchAll(() => Effect.succeed([] as Part[])),
+		)
+
+		const parts = await Effect.runPromise(program)
+
+		expect(parts).toHaveLength(0)
+	})
+})
+
 describe("Part list operations", () => {
 	it("should handle parts with ULID IDs (sortable)", () => {
 		// ULIDs are lexicographically sortable by timestamp
@@ -191,23 +372,13 @@ describe("Part list operations", () => {
 })
 
 describe("Part filtering by session", () => {
-	it("should filter parts for a specific session via messageID lookup", () => {
-		// In practice, we'd need to know which messages belong to which session
-		// This test demonstrates the concept that parts are associated with messages
-		const parts: Part[] = [
-			createPart("part-a", "msg-session1-1"),
-			createPart("part-b", "msg-session1-1"),
-			createPart("part-c", "msg-session2-1"),
-			createPart("part-d", "msg-session1-2"),
-		]
+	it("filters parts for a specific session via message lookup", async () => {
+		// PartAtom.list already filters by session because it fetches
+		// messages for a specific session
+		const parts = await Effect.runPromise(PartAtom.list("session-1"))
 
-		// Filter parts for session 1 (assuming message IDs contain session identifier)
-		const session1Parts = parts.filter((p) => p.messageID.includes("session1"))
-
-		expect(session1Parts).toHaveLength(3)
-		expect(session1Parts.map((p) => p.id)).toEqual(["part-a", "part-b", "part-d"])
+		// All parts should belong to messages in session-1
+		expect(parts).toHaveLength(3)
+		expect(parts.every((p) => ["msg-1", "msg-2"].includes(p.messageID))).toBe(true)
 	})
 })
-
-// Note: Tests for useMessageParts hook will be added when implementing the hook
-// Current phase focuses on binary search utilities which are already tested above.

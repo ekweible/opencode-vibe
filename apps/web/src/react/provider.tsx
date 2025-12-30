@@ -32,8 +32,8 @@ import {
 import { toast } from "sonner"
 import { SSEProvider, useSSE } from "./use-sse"
 import { useOpencodeStore } from "./store"
-import { createClient } from "@/core/client"
-import { createRouter, createCaller, createRoutes, type Caller } from "@opencode-vibe/router"
+import { createClient } from "@/lib/client"
+import { createRouter, createCaller, createRoutes, type Caller } from "@opencode-vibe/core/router"
 import type { GlobalEvent, Session as SDKSession } from "@opencode-ai/sdk/client"
 
 /**

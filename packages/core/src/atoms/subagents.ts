@@ -1,8 +1,8 @@
 /**
- * Subagents Atom (Phase 5 - Zustand Replacement)
+ * Subagents Atom (Effect Program)
  *
- * React hook for subagent session management.
- * Replaces stores/subagent-store.ts with plain React state.
+ * Pure Effect programs for subagent session management.
+ * No React dependencies - usable in any Effect runtime.
  *
  * Provides:
  * - Subagent session registration and tracking
@@ -13,10 +13,8 @@
  * @module atoms/subagents
  */
 
-"use client"
-
-import { useState, useCallback } from "react"
-import type { Message, Part } from "@opencode-vibe/react"
+import { Effect, Ref } from "effect"
+import type { Message, Part } from "../types/index.js"
 
 /**
  * Subagent session state
@@ -32,265 +30,372 @@ export interface SubagentSession {
 }
 
 /**
- * Hook return type with state and actions
+ * Subagent store state
  */
-export interface UseSubagentsReturn {
-	// State
+export interface SubagentState {
 	sessions: Record<string, SubagentSession>
 	partToSession: Record<string, string>
+	expanded: Set<string>
+}
 
-	// Actions
+/**
+ * Subagent Atom
+ *
+ * Pure Effect programs for subagent session management.
+ * Uses Effect.Ref for mutable state management.
+ */
+export const SubagentAtom = {
+	/**
+	 * Create a new subagent state
+	 *
+	 * @returns Effect that yields a Ref to the subagent state
+	 *
+	 * @example
+	 * ```typescript
+	 * const stateRef = await Effect.runPromise(SubagentAtom.create())
+	 * ```
+	 */
+	create: (): Effect.Effect<Ref.Ref<SubagentState>, never> =>
+		Ref.make<SubagentState>({
+			sessions: {},
+			partToSession: {},
+			expanded: new Set(),
+		}),
+
+	/**
+	 * Register a new subagent session
+	 *
+	 * @param stateRef - Reference to the subagent state
+	 * @param childSessionId - ID of the child session
+	 * @param parentSessionId - ID of the parent session
+	 * @param parentPartId - ID of the parent part (Task tool part)
+	 * @param agentName - Name of the agent
+	 * @returns Effect that registers the subagent
+	 *
+	 * @example
+	 * ```typescript
+	 * await Effect.runPromise(
+	 *   SubagentAtom.registerSubagent(stateRef, "child-123", "parent-456", "part-789", "TestAgent")
+	 * )
+	 * ```
+	 */
 	registerSubagent: (
+		stateRef: Ref.Ref<SubagentState>,
 		childSessionId: string,
 		parentSessionId: string,
 		parentPartId: string,
 		agentName: string,
-	) => void
+	): Effect.Effect<void, never> =>
+		Ref.update(stateRef, (state) => {
+			const newSession: SubagentSession = {
+				id: childSessionId,
+				parentSessionId,
+				parentPartId,
+				agentName,
+				status: "running",
+				messages: [],
+				parts: {},
+			}
 
-	updateParentPartId: (childSessionId: string, parentPartId: string) => void
-
-	addMessage: (sessionId: string, message: Message) => void
-	updateMessage: (sessionId: string, message: Message) => void
-	addPart: (sessionId: string, messageId: string, part: Part) => void
-	updatePart: (sessionId: string, messageId: string, part: Part) => void
-	setStatus: (sessionId: string, status: SubagentSession["status"]) => void
-
-	toggleExpanded: (partId: string) => void
-	isExpanded: (partId: string) => boolean
-
-	getByParentPart: (partId: string) => SubagentSession | undefined
-}
-
-/**
- * React hook to manage subagent sessions
- *
- * Features:
- * - Tracks child agent sessions spawned via Task tool
- * - Manages messages and parts for each subagent
- * - Auto-expands running subagents in UI
- * - Provides parent part ID to session mapping
- *
- * @returns UseSubagentsReturn with state and actions
- *
- * @example
- * ```tsx
- * const subagents = useSubagents()
- *
- * // Register a new subagent
- * subagents.registerSubagent("child-123", "parent-456", "part-789", "TestAgent")
- *
- * // Add messages
- * subagents.addMessage("child-123", message)
- *
- * // Check expansion state
- * if (subagents.isExpanded("part-789")) {
- *   // Render expanded UI
- * }
- *
- * // Get session by parent part
- * const session = subagents.getByParentPart("part-789")
- * ```
- */
-export function useSubagents(): UseSubagentsReturn {
-	const [sessions, setSessions] = useState<Record<string, SubagentSession>>({})
-	const [partToSession, setPartToSession] = useState<Record<string, string>>({})
-	const [expanded, setExpanded] = useState<Set<string>>(new Set())
-
-	const registerSubagent = useCallback(
-		(childSessionId: string, parentSessionId: string, parentPartId: string, agentName: string) => {
-			setSessions((prev) => ({
-				...prev,
-				[childSessionId]: {
-					id: childSessionId,
-					parentSessionId,
-					parentPartId,
-					agentName,
-					status: "running",
-					messages: [],
-					parts: {},
-				},
-			}))
-
+			const newExpanded = new Set(state.expanded)
 			if (parentPartId) {
-				setPartToSession((prev) => ({
-					...prev,
-					[parentPartId]: childSessionId,
-				}))
-				// Auto-expand running subagents so users can see activity
-				setExpanded((prev) => new Set(prev).add(parentPartId))
+				newExpanded.add(parentPartId)
 			}
-		},
-		[],
-	)
-
-	const updateParentPartId = useCallback((childSessionId: string, parentPartId: string) => {
-		setSessions((prev) => {
-			const session = prev[childSessionId]
-			if (!session) return prev
 
 			return {
-				...prev,
-				[childSessionId]: {
-					...session,
-					parentPartId,
+				sessions: {
+					...state.sessions,
+					[childSessionId]: newSession,
 				},
+				partToSession: {
+					...state.partToSession,
+					...(parentPartId ? { [parentPartId]: childSessionId } : {}),
+				},
+				expanded: newExpanded,
 			}
-		})
+		}),
 
-		setPartToSession((prev) => ({
-			...prev,
-			[parentPartId]: childSessionId,
-		}))
+	/**
+	 * Update parent part ID for a session
+	 *
+	 * @param stateRef - Reference to the subagent state
+	 * @param childSessionId - ID of the child session
+	 * @param parentPartId - New parent part ID
+	 * @returns Effect that updates the parent part ID
+	 */
+	updateParentPartId: (
+		stateRef: Ref.Ref<SubagentState>,
+		childSessionId: string,
+		parentPartId: string,
+	): Effect.Effect<void, never> =>
+		Ref.update(stateRef, (state) => {
+			const session = state.sessions[childSessionId]
+			if (!session) return state
 
-		// Auto-expand when we learn the parentPartId (subagent is running)
-		setSessions((prev) => {
-			const session = prev[childSessionId]
-			if (session?.status === "running") {
-				setExpanded((prevExpanded) => new Set(prevExpanded).add(parentPartId))
+			const newExpanded = new Set(state.expanded)
+			if (session.status === "running") {
+				newExpanded.add(parentPartId)
 			}
-			return prev
-		})
-	}, [])
-
-	const addMessage = useCallback((sessionId: string, message: Message) => {
-		setSessions((prev) => {
-			const session = prev[sessionId]
-			if (!session) return prev
 
 			return {
-				...prev,
-				[sessionId]: {
-					...session,
-					messages: [...session.messages, message],
-					parts: {
-						...session.parts,
-						[message.id]: [],
+				sessions: {
+					...state.sessions,
+					[childSessionId]: {
+						...session,
+						parentPartId,
+					},
+				},
+				partToSession: {
+					...state.partToSession,
+					[parentPartId]: childSessionId,
+				},
+				expanded: newExpanded,
+			}
+		}),
+
+	/**
+	 * Add a message to a session
+	 *
+	 * @param stateRef - Reference to the subagent state
+	 * @param sessionId - ID of the session
+	 * @param message - Message to add
+	 * @returns Effect that adds the message
+	 */
+	addMessage: (
+		stateRef: Ref.Ref<SubagentState>,
+		sessionId: string,
+		message: Message,
+	): Effect.Effect<void, never> =>
+		Ref.update(stateRef, (state) => {
+			const session = state.sessions[sessionId]
+			if (!session) return state
+
+			return {
+				...state,
+				sessions: {
+					...state.sessions,
+					[sessionId]: {
+						...session,
+						messages: [...session.messages, message],
+						parts: {
+							...session.parts,
+							[message.id]: [],
+						},
 					},
 				},
 			}
-		})
-	}, [])
+		}),
 
-	const updateMessage = useCallback((sessionId: string, message: Message) => {
-		setSessions((prev) => {
-			const session = prev[sessionId]
-			if (!session) return prev
+	/**
+	 * Update a message in a session
+	 *
+	 * @param stateRef - Reference to the subagent state
+	 * @param sessionId - ID of the session
+	 * @param message - Updated message
+	 * @returns Effect that updates the message
+	 */
+	updateMessage: (
+		stateRef: Ref.Ref<SubagentState>,
+		sessionId: string,
+		message: Message,
+	): Effect.Effect<void, never> =>
+		Ref.update(stateRef, (state) => {
+			const session = state.sessions[sessionId]
+			if (!session) return state
 
 			const idx = session.messages.findIndex((m) => m.id === message.id)
-			if (idx === -1) return prev
+			if (idx === -1) return state
 
 			const messages = [...session.messages]
 			messages[idx] = message
 
 			return {
-				...prev,
-				[sessionId]: {
-					...session,
-					messages,
+				...state,
+				sessions: {
+					...state.sessions,
+					[sessionId]: {
+						...session,
+						messages,
+					},
 				},
 			}
-		})
-	}, [])
+		}),
 
-	const addPart = useCallback((sessionId: string, messageId: string, part: Part) => {
-		setSessions((prev) => {
-			const session = prev[sessionId]
-			if (!session) return prev
+	/**
+	 * Add a part to a message
+	 *
+	 * @param stateRef - Reference to the subagent state
+	 * @param sessionId - ID of the session
+	 * @param messageId - ID of the message
+	 * @param part - Part to add
+	 * @returns Effect that adds the part
+	 */
+	addPart: (
+		stateRef: Ref.Ref<SubagentState>,
+		sessionId: string,
+		messageId: string,
+		part: Part,
+	): Effect.Effect<void, never> =>
+		Ref.update(stateRef, (state) => {
+			const session = state.sessions[sessionId]
+			if (!session) return state
 
 			const currentParts = session.parts[messageId] || []
 
 			return {
-				...prev,
-				[sessionId]: {
-					...session,
-					parts: {
-						...session.parts,
-						[messageId]: [...currentParts, part],
+				...state,
+				sessions: {
+					...state.sessions,
+					[sessionId]: {
+						...session,
+						parts: {
+							...session.parts,
+							[messageId]: [...currentParts, part],
+						},
 					},
 				},
 			}
-		})
-	}, [])
+		}),
 
-	const updatePart = useCallback((sessionId: string, messageId: string, part: Part) => {
-		setSessions((prev) => {
-			const session = prev[sessionId]
-			if (!session || !session.parts[messageId]) return prev
+	/**
+	 * Update a part in a message
+	 *
+	 * @param stateRef - Reference to the subagent state
+	 * @param sessionId - ID of the session
+	 * @param messageId - ID of the message
+	 * @param part - Updated part
+	 * @returns Effect that updates the part
+	 */
+	updatePart: (
+		stateRef: Ref.Ref<SubagentState>,
+		sessionId: string,
+		messageId: string,
+		part: Part,
+	): Effect.Effect<void, never> =>
+		Ref.update(stateRef, (state) => {
+			const session = state.sessions[sessionId]
+			if (!session || !session.parts[messageId]) return state
 
 			const parts = session.parts[messageId]
 			const idx = parts.findIndex((p) => p.id === part.id)
-			if (idx === -1) return prev
+			if (idx === -1) return state
 
 			const updatedParts = [...parts]
 			updatedParts[idx] = part
 
 			return {
-				...prev,
-				[sessionId]: {
-					...session,
-					parts: {
-						...session.parts,
-						[messageId]: updatedParts,
+				...state,
+				sessions: {
+					...state.sessions,
+					[sessionId]: {
+						...session,
+						parts: {
+							...session.parts,
+							[messageId]: updatedParts,
+						},
 					},
 				},
 			}
-		})
-	}, [])
+		}),
 
-	const setStatus = useCallback((sessionId: string, status: SubagentSession["status"]) => {
-		setSessions((prev) => {
-			const session = prev[sessionId]
-			if (!session) return prev
+	/**
+	 * Set the status of a session
+	 *
+	 * @param stateRef - Reference to the subagent state
+	 * @param sessionId - ID of the session
+	 * @param status - New status
+	 * @returns Effect that sets the status
+	 */
+	setStatus: (
+		stateRef: Ref.Ref<SubagentState>,
+		sessionId: string,
+		status: SubagentSession["status"],
+	): Effect.Effect<void, never> =>
+		Ref.update(stateRef, (state) => {
+			const session = state.sessions[sessionId]
+			if (!session) return state
 
 			return {
-				...prev,
-				[sessionId]: {
-					...session,
-					status,
+				...state,
+				sessions: {
+					...state.sessions,
+					[sessionId]: {
+						...session,
+						status,
+					},
 				},
 			}
-		})
-	}, [])
+		}),
 
-	const toggleExpanded = useCallback((partId: string) => {
-		setExpanded((prev) => {
-			const next = new Set(prev)
-			if (next.has(partId)) {
-				next.delete(partId)
+	/**
+	 * Toggle expansion state of a part
+	 *
+	 * @param stateRef - Reference to the subagent state
+	 * @param partId - ID of the part
+	 * @returns Effect that toggles the expansion state
+	 */
+	toggleExpanded: (stateRef: Ref.Ref<SubagentState>, partId: string): Effect.Effect<void, never> =>
+		Ref.update(stateRef, (state) => {
+			const newExpanded = new Set(state.expanded)
+			if (newExpanded.has(partId)) {
+				newExpanded.delete(partId)
 			} else {
-				next.add(partId)
+				newExpanded.add(partId)
 			}
-			return next
-		})
-	}, [])
 
-	const isExpanded = useCallback(
-		(partId: string) => {
-			return expanded.has(partId)
-		},
-		[expanded],
-	)
+			return {
+				...state,
+				expanded: newExpanded,
+			}
+		}),
 
-	const getByParentPart = useCallback(
-		(partId: string) => {
-			const sessionId = partToSession[partId]
-			return sessionId ? sessions[sessionId] : undefined
-		},
-		[partToSession, sessions],
-	)
+	/**
+	 * Check if a part is expanded
+	 *
+	 * @param stateRef - Reference to the subagent state
+	 * @param partId - ID of the part
+	 * @returns Effect that yields whether the part is expanded
+	 */
+	isExpanded: (stateRef: Ref.Ref<SubagentState>, partId: string): Effect.Effect<boolean, never> =>
+		Ref.get(stateRef).pipe(Effect.map((state) => state.expanded.has(partId))),
 
-	return {
-		sessions,
-		partToSession,
-		registerSubagent,
-		updateParentPartId,
-		addMessage,
-		updateMessage,
-		addPart,
-		updatePart,
-		setStatus,
-		toggleExpanded,
-		isExpanded,
-		getByParentPart,
-	}
+	/**
+	 * Get a session by parent part ID
+	 *
+	 * @param stateRef - Reference to the subagent state
+	 * @param partId - ID of the parent part
+	 * @returns Effect that yields the session or undefined
+	 */
+	getByParentPart: (
+		stateRef: Ref.Ref<SubagentState>,
+		partId: string,
+	): Effect.Effect<SubagentSession | undefined, never> =>
+		Ref.get(stateRef).pipe(
+			Effect.map((state) => {
+				const sessionId = state.partToSession[partId]
+				return sessionId ? state.sessions[sessionId] : undefined
+			}),
+		),
+
+	/**
+	 * Get all sessions
+	 *
+	 * @param stateRef - Reference to the subagent state
+	 * @returns Effect that yields all sessions
+	 */
+	getSessions: (
+		stateRef: Ref.Ref<SubagentState>,
+	): Effect.Effect<Record<string, SubagentSession>, never> =>
+		Ref.get(stateRef).pipe(Effect.map((state) => state.sessions)),
+
+	/**
+	 * Get the part to session mapping
+	 *
+	 * @param stateRef - Reference to the subagent state
+	 * @returns Effect that yields the part to session mapping
+	 */
+	getPartToSession: (
+		stateRef: Ref.Ref<SubagentState>,
+	): Effect.Effect<Record<string, string>, never> =>
+		Ref.get(stateRef).pipe(Effect.map((state) => state.partToSession)),
 }

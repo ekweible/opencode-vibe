@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
-import { convertToApiParts } from "./prompt-api"
-import type { Prompt } from "@/types/prompt"
+import { convertToApiParts } from "./prompt-api.js"
+import type { Prompt } from "../types/prompt.js"
 
 describe("convertToApiParts", () => {
 	const directory = "/Users/test/project"

@@ -1,48 +1,27 @@
 /**
- * Atoms index - exports all reactive state atoms
+ * Atoms index - exports all state atoms
  *
- * Phase 1 (Interim): Export hooks that wrap Effect services directly
- * Phase 2 (Future): Export effect-atom atoms when @effect-atom is installed
+ * All atoms are now pure Effect programs.
+ * React hooks are in packages/react/src/hooks/
  *
  * @module atoms
  */
 
-export { useServers, useCurrentServer } from "./servers"
+// Batch 1 - COMPLETED (Pure Effect programs)
+export { SessionAtom } from "./sessions.js"
+export { MessageAtom } from "./messages.js"
+export { PartAtom } from "./parts.js"
+export { ServerAtom, DEFAULT_SERVER, selectBestServer } from "./servers.js"
+export { SSEAtom, makeSSEAtom, sseAtom, type SSEConfig } from "./sse.js"
 
+// Batch 2 - COMPLETED (Pure Effect programs / utilities)
+export { ProviderAtom, type Provider, type Model } from "./providers.js"
+export { ProjectAtom, type Project } from "./projects.js"
+export { PromptUtil, type AutocompleteState } from "./prompt.js"
+
+// Batch 3 - COMPLETED (Pure Effect programs)
 export {
-	sseAtom,
-	useSSEConnection,
-	makeSSEAtom,
-	type SSEConnectionState,
-	type SSEConfig,
-} from "./sse"
-
-export {
-	useSessionList,
-	type SessionListState,
-	type UseSessionListOptions,
-} from "./sessions"
-
-export {
-	useMessages,
-	makeMessagesAtom,
-	type MessageListState,
-	type UseMessagesOptions,
-} from "./messages"
-
-export {
-	useMessageParts,
-	makePartsAtom,
-	type PartListState,
-	type UseMessagePartsOptions,
-} from "./parts"
-
-export { useProviders, type Provider, type Model } from "./providers"
-
-export {
-	useProjects,
-	useCurrentProject,
-	type Project,
-	type ProjectListState,
-	type CurrentProjectState,
-} from "./projects"
+	SubagentAtom,
+	type SubagentSession,
+	type SubagentState,
+} from "./subagents.js"

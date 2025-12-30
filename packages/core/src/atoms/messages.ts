@@ -1,125 +1,62 @@
 /**
- * Messages Atom (Phase 1 - Interim)
+ * Messages Atom - Pure Effect Programs
  *
- * React hook for message list management with binary search insertion.
- * Phase 1: Wrap SDK calls in hooks with SSE cache invalidation
- * Phase 2: Full effect-atom migration when patterns are stable
+ * Framework-agnostic Effect programs for message management.
+ * Consumers (React hooks) should use Effect.runPromise to execute these programs.
  *
  * Provides:
  * - Message list fetching via SDK
- * - Binary search insertion for O(log n) updates
- * - SSE event handling (message.updated, message.created)
  * - Sorted by ID (ULIDs are lexicographically sortable)
  *
  * @module atoms/messages
  */
 
-"use client"
-
-import { useState, useEffect, useCallback } from "react"
-import { createClient } from "@/core/client"
-import { Binary } from "@/lib/binary"
-import type { Message } from "@opencode-vibe/react"
-import type { GlobalEvent } from "@opencode-ai/sdk/client"
+import { Effect } from "effect"
+import { createClient } from "../client/index.js"
+import type { Message } from "../types/index.js"
 
 /**
- * Message list state
+ * Message atom namespace with Effect programs
  */
-export interface MessageListState {
-	/** List of messages sorted by ID */
-	messages: Message[]
-	/** Whether initial fetch is in progress */
-	loading: boolean
-	/** Last error if fetch failed */
-	error: Error | null
-}
-
-/**
- * Hook options
- */
-export interface UseMessagesOptions {
-	/** Session ID to fetch messages for */
-	sessionId: string
-	/** Project directory */
-	directory?: string
-	/** Optional SSE event to trigger updates */
-	sseEvent?: GlobalEvent | null
-}
-
-/**
- * Factory function to create messages atom with injectable config (for testing)
- *
- * This returns a hook factory that can be configured with custom SSE event sources,
- * maintaining compatibility with the atom pattern.
- *
- * @param config - Messages atom configuration
- * @returns Hook factory
- *
- * @example
- * ```tsx
- * const messagesAtom = makeMessagesAtom({ directory: "/my/project" })
- * const { messages, loading } = messagesAtom.useMessages("session-123")
- * ```
- */
-export function makeMessagesAtom(config: { directory?: string } = {}) {
-	return {
-		config,
-		/**
-		 * Hook to fetch and track messages for a session
-		 */
-		useMessages: (sessionId: string, sseEvent?: GlobalEvent | null) => {
-			return useMessages({ sessionId, directory: config.directory, sseEvent })
-		},
-	}
-}
-
-/**
- * React hook to fetch and track messages with binary search updates
- *
- * Features:
- * - Fetches messages on mount
- * - Handles SSE message.updated events with binary search insertion
- * - Maintains sorted order by ID (O(log n) insertions)
- * - Falls back to empty array on error
- *
- * @param options - Hook options (sessionId, directory, sseEvent)
- * @returns MessageListState with messages, loading, error
- *
- * @example
- * ```tsx
- * const { messages, loading, error } = useMessages({
- *   sessionId: "session-123",
- *   directory: "/my/project",
- *   sseEvent: latestSSEEvent
- * })
- *
- * if (loading) return <div>Loading messages...</div>
- * if (error) console.warn("Failed to load messages:", error)
- *
- * return (
- *   <ul>
- *     {messages.map(m => <li key={m.id}>{m.role}: {m.id}</li>)}
- *   </ul>
- * )
- * ```
- */
-export function useMessages(options: UseMessagesOptions): MessageListState {
-	const { sessionId, directory, sseEvent } = options
-
-	const [messages, setMessages] = useState<Message[]>([])
-	const [loading, setLoading] = useState(false)
-	const [error, setError] = useState<Error | null>(null)
-
-	// Fetch messages - stable reference via useCallback
-	const fetchMessages = useCallback(async () => {
-		setLoading(true)
-		setError(null)
-
-		try {
+export const MessageAtom = {
+	/**
+	 * Fetch all messages for a session, sorted by ID
+	 *
+	 * @param sessionId - Session ID to fetch messages for
+	 * @param directory - Project directory (optional)
+	 * @returns Effect program that yields Message[] or Error
+	 *
+	 * @example
+	 * ```typescript
+	 * import { Effect } from "effect"
+	 * import { MessageAtom } from "@opencode/core/atoms"
+	 *
+	 * // Execute the Effect program
+	 * const messages = await Effect.runPromise(
+	 *   MessageAtom.list("session-123", "/my/project")
+	 * )
+	 *
+	 * // Or compose with other Effects
+	 * const program = Effect.gen(function* () {
+	 *   const messages = yield* MessageAtom.list("session-123")
+	 *   return messages.filter(m => m.role === "assistant")
+	 * })
+	 * ```
+	 */
+	list: (sessionId: string, directory?: string): Effect.Effect<Message[], Error> =>
+		Effect.gen(function* () {
 			const client = createClient(directory)
-			const response = await client.session.messages({
-				path: { id: sessionId },
-				query: { limit: 1000 }, // TODO: Pagination
+
+			const response = yield* Effect.tryPromise({
+				try: () =>
+					client.session.messages({
+						path: { id: sessionId },
+						query: { limit: 1000 }, // TODO: Pagination
+					}),
+				catch: (error) =>
+					new Error(
+						`Failed to fetch messages: ${error instanceof Error ? error.message : String(error)}`,
+					),
 			})
 
 			// Extract messages from response (each item has { info: Message, parts: Part[] })
@@ -127,68 +64,39 @@ export function useMessages(options: UseMessagesOptions): MessageListState {
 			const messageList = (response.data || []).map((m: any) => m.info as Message)
 
 			// Sort by ID for binary search (ULIDs are lexicographically sortable)
-			const sorted = messageList.sort((a, b) => a.id.localeCompare(b.id))
+			return messageList.sort((a, b) => a.id.localeCompare(b.id))
+		}),
 
-			setMessages(sorted)
-			setLoading(false)
-		} catch (err) {
-			const errorObj = err instanceof Error ? err : new Error(String(err))
-			setError(errorObj)
-			setMessages([]) // Fallback to empty array on error
-			setLoading(false)
-		}
-	}, [sessionId, directory])
-
-	// Initial fetch on mount (and when sessionId/directory changes)
-	useEffect(() => {
-		fetchMessages()
-	}, [fetchMessages])
-
-	// Handle SSE events: message.updated with binary search insertion
-	useEffect(() => {
-		if (!sseEvent) return
-
-		const eventType = sseEvent.payload.type
-
-		// Handle message.updated event (covers both create and update)
-		if (eventType === "message.updated") {
-			const message = sseEvent.payload.properties.info as Message
-
-			// Only update if message belongs to this session
-			if (message.sessionID !== sessionId) return
-
-			setMessages((prevMessages) => {
-				const result = Binary.search(prevMessages, message.id, (m) => m.id)
-
-				if (result.found) {
-					// Message exists - update it
-					const updated = [...prevMessages]
-					updated[result.index] = message
-					return updated
-				}
-				// Message doesn't exist - insert it
-				return Binary.insert(prevMessages, message, (m) => m.id)
-			})
-		}
-
-		// Handle message removal
-		if (eventType === "message.removed") {
-			const { sessionID, messageID } = sseEvent.payload.properties
-
-			// Only update if message belongs to this session
-			if (sessionID !== sessionId) return
-
-			setMessages((prevMessages) => {
-				const result = Binary.search(prevMessages, messageID, (m) => m.id)
-				if (result.found) {
-					const updated = [...prevMessages]
-					updated.splice(result.index, 1)
-					return updated
-				}
-				return prevMessages
-			})
-		}
-	}, [sseEvent, sessionId])
-
-	return { messages, loading, error }
+	/**
+	 * Fetch a single message by ID
+	 *
+	 * @param sessionId - Session ID containing the message
+	 * @param messageId - Message ID
+	 * @param directory - Project directory (optional)
+	 * @returns Effect program that yields Message | null or Error
+	 *
+	 * @example
+	 * ```typescript
+	 * const message = await Effect.runPromise(
+	 *   MessageAtom.get("session-123", "msg-456")
+	 * )
+	 * if (message) {
+	 *   console.log(message.role, message.id)
+	 * }
+	 * ```
+	 */
+	get: (
+		sessionId: string,
+		messageId: string,
+		directory?: string,
+	): Effect.Effect<Message | null, Error> =>
+		Effect.gen(function* () {
+			// Fetch all messages and find the one we want
+			// NOTE: SDK doesn't have a direct message.get endpoint
+			const messages = yield* MessageAtom.list(sessionId, directory)
+			return messages.find((m) => m.id === messageId) ?? null
+		}),
 }
+
+// Export types for consumers
+export type { Message }

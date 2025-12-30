@@ -1,18 +1,14 @@
 /**
- * OpenCode SDK client factory
+ * Client routing utilities and SDK factory
  *
- * Creates a configured client for connecting to the OpenCode server.
- * Default server runs on localhost:4056.
- *
- * Smart routing: If a TUI or other opencode process is running for a directory,
- * requests are routed to that server instead of the default. This enables
- * sending messages to sessions running in TUIs!
+ * Provides routing logic and SDK client factory for OpenCode.
  */
 
-import { createOpencodeClient } from "@opencode-ai/sdk/client"
-import { multiServerSSE } from "./multi-server-sse"
+import { createOpencodeClient, type OpencodeClient } from "@opencode-ai/sdk/client"
+import { getServerForDirectory, getServerForSession, type ServerInfo } from "../discovery/index.js"
+import { multiServerSSE } from "../sse/multi-server-sse.js"
 
-export type { OpencodeClient } from "@opencode-ai/sdk/client"
+export type { OpencodeClient }
 
 /**
  * Default OpenCode server URL
@@ -21,28 +17,87 @@ export type { OpencodeClient } from "@opencode-ai/sdk/client"
 export const OPENCODE_URL = process.env.NEXT_PUBLIC_OPENCODE_URL ?? "http://localhost:4056"
 
 /**
- * Create an OpenCode client instance
+ * Routing context for smart server discovery
+ * Inject this from MultiServerSSE or other discovery mechanisms
+ */
+export interface RoutingContext {
+	/** Available servers from discovery */
+	servers: ServerInfo[]
+	/** Optional session->port cache for session-specific routing */
+	sessionToPort?: Map<string, number>
+}
+
+/**
+ * Get the appropriate server URL for a client request
  *
- * Smart routing: Routes to the server that owns the session (if known),
+ * Priority: session-specific routing > directory routing > default server
+ *
+ * @param directory - Optional project directory for scoping
+ * @param sessionId - Optional session ID for session-specific routing
+ * @param routingContext - Routing context with servers (optional)
+ * @returns Server URL to use
+ *
+ * @example
+ * ```ts
+ * // Basic usage (routes to default)
+ * const url = getClientUrl()
+ * // => "http://localhost:4056"
+ *
+ * // With directory (routes to directory's server if found)
+ * const url = getClientUrl("/path/to/project", undefined, { servers })
+ * // => "http://127.0.0.1:4057" (if server found) or default
+ *
+ * // With session (routes to session's server)
+ * const url = getClientUrl("/path/to/project", "ses_123", { servers, sessionToPort })
+ * // => routes to cached session server, then directory, then default
+ * ```
+ */
+export function getClientUrl(
+	directory?: string,
+	sessionId?: string,
+	routingContext?: RoutingContext,
+): string {
+	// No routing context = use default
+	if (!routingContext || routingContext.servers.length === 0) {
+		return OPENCODE_URL
+	}
+
+	// Priority: session-specific routing > directory routing > default
+	if (sessionId && directory) {
+		return getServerForSession(
+			sessionId,
+			directory,
+			routingContext.servers,
+			routingContext.sessionToPort,
+		)
+	}
+
+	if (directory) {
+		return getServerForDirectory(directory, routingContext.servers)
+	}
+
+	return OPENCODE_URL
+}
+
+/**
+ * Create an OpenCode SDK client instance with smart routing
+ *
+ * Routes to the server that owns the session (if known),
  * otherwise falls back to directory-based routing, then default server.
+ *
+ * Uses multiServerSSE for routing context (server discovery + session cache).
  *
  * @param directory - Optional project directory for scoping requests
  * @param sessionId - Optional session ID for session-specific routing
- * @returns Configured OpencodeClient with all namespaces (session, provider, etc.)
+ * @returns Configured OpencodeClient with all namespaces
  *
  * @example
  * ```ts
  * const client = createClient()
  * const sessions = await client.session.list()
  * ```
- *
- * @example With session routing (routes to server that owns the session)
- * ```ts
- * const client = createClient("/path/to/project", "ses_123")
- * await client.session.prompt({ ... }) // Goes to the server that owns ses_123!
- * ```
  */
-export function createClient(directory?: string, sessionId?: string) {
+export function createClient(directory?: string, sessionId?: string): OpencodeClient {
 	// Priority: session-specific routing > directory routing > default
 	let discoveredUrl: string | undefined
 

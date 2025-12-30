@@ -14,7 +14,7 @@ import { renderHook, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, test, vi } from "vitest"
 import { useMultiServerSSE } from "./use-multi-server-sse"
 import { useOpencodeStore } from "./store"
-import { multiServerSSE } from "@/core/multi-server-sse"
+import { multiServerSSE } from "@opencode-vibe/core/sse"
 
 type EventCallback = (event: {
 	directory: string

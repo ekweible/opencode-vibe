@@ -6,7 +6,7 @@
 
 import { describe, expect, test } from "vitest"
 import { Effect } from "effect"
-import { ServerDiscovery, makeTestLayer, type ServerInfo } from "./discovery"
+import { ServerDiscovery, makeTestLayer, type ServerInfo } from "./discovery.js"
 
 describe("ServerDiscovery", () => {
 	test("discover() returns servers with url field added", async () => {

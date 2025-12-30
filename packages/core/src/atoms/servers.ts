@@ -1,29 +1,25 @@
 /**
- * Server Discovery Hooks (Phase 1 - Interim)
+ * Server Discovery Atom (Effect Program)
  *
- * React hooks for OpenCode server discovery using Effect service directly.
- * Phase 1: Wrap Effect service in hooks (no effect-atom yet)
- * Phase 2: Migrate to effect-atom when @effect-atom is installed
+ * Pure Effect programs for OpenCode server discovery.
+ * No React dependencies - usable in any Effect runtime.
  *
  * Provides:
  * - Effect-native server discovery integration
  * - Automatic fallback to localhost:4056
- * - React hooks for easy consumption
+ * - Pure functional API
  *
  * @module atoms/servers
  */
 
-"use client"
-
-import { useState, useEffect } from "react"
 import { Effect } from "effect"
-import { ServerDiscovery, type ServerInfo, Default } from "../core/discovery"
+import { ServerDiscovery, type ServerInfo, ServerDiscoveryDefault } from "../discovery/index.js"
 
 /**
  * Default fallback server (localhost:4056)
  * CRITICAL: This must ALWAYS be available as fallback
  */
-const DEFAULT_SERVER: ServerInfo = {
+export const DEFAULT_SERVER: ServerInfo = {
 	port: 4056,
 	directory: "",
 	url: "http://localhost:4056",
@@ -43,95 +39,64 @@ export function selectBestServer(servers: ServerInfo[]): ServerInfo {
 }
 
 /**
- * React hook to discover and track OpenCode servers
+ * Server Discovery Atom
  *
- * Runs discovery on mount and provides server list with loading/error states.
- * Always includes localhost:4056 as fallback.
- *
- * @returns Object with servers array, loading boolean, and error
- *
- * @example
- * ```tsx
- * const { servers, loading, error } = useServers()
- * if (loading) return <div>Discovering servers...</div>
- * if (error) return <div>Error: {error.message}</div>
- * return <div>Found {servers.length} servers</div>
- * ```
+ * Pure Effect programs for server discovery and selection.
  */
-export function useServers() {
-	const [servers, setServers] = useState<ServerInfo[]>([DEFAULT_SERVER])
-	const [loading, setLoading] = useState(false)
-	const [error, setError] = useState<Error | null>(null)
+export const ServerAtom = {
+	/**
+	 * Discover available OpenCode servers
+	 *
+	 * Runs server discovery and ensures localhost:4056 is always included.
+	 * Never fails - falls back to DEFAULT_SERVER on error.
+	 *
+	 * @returns Effect that yields list of discovered servers (always includes default)
+	 *
+	 * @example
+	 * ```typescript
+	 * const servers = await Effect.runPromise(ServerAtom.discover())
+	 * console.log("Found", servers.length, "servers")
+	 * ```
+	 */
+	discover: (): Effect.Effect<ServerInfo[], never> =>
+		Effect.gen(function* () {
+			const discovery = yield* ServerDiscovery
+			const discoveredServers = yield* discovery.discover()
 
-	useEffect(() => {
-		let cancelled = false
-
-		const runDiscovery = async () => {
-			setLoading(true)
-			setError(null)
-
-			try {
-				// Run the Effect discovery service
-				const discoveredServers = await Effect.runPromise(
-					Effect.gen(function* () {
-						const discovery = yield* ServerDiscovery
-						return yield* discovery.discover()
-					}).pipe(Effect.provide(Default)),
-				)
-
-				if (cancelled) return
-
-				// CRITICAL: Always include localhost:4056 default
-				if (discoveredServers.length === 0) {
-					setServers([DEFAULT_SERVER])
-				} else {
-					// Check if default server already in list
-					const hasDefault = discoveredServers.some(
-						(s) => s.port === DEFAULT_SERVER.port && s.directory === DEFAULT_SERVER.directory,
-					)
-
-					// If default not found, prepend it
-					setServers(hasDefault ? discoveredServers : [DEFAULT_SERVER, ...discoveredServers])
-				}
-
-				setLoading(false)
-			} catch (err) {
-				if (cancelled) return
-
-				setError(err instanceof Error ? err : new Error(String(err)))
-				// On error, fall back to default server
-				setServers([DEFAULT_SERVER])
-				setLoading(false)
+			// CRITICAL: Always include localhost:4056 default
+			if (discoveredServers.length === 0) {
+				return [DEFAULT_SERVER]
 			}
-		}
 
-		runDiscovery()
+			// Check if default server already in list
+			const hasDefault = discoveredServers.some(
+				(s) => s.port === DEFAULT_SERVER.port && s.directory === DEFAULT_SERVER.directory,
+			)
 
-		return () => {
-			cancelled = true
-		}
-	}, [])
+			// If default not found, prepend it
+			return hasDefault ? discoveredServers : [DEFAULT_SERVER, ...discoveredServers]
+		}).pipe(
+			Effect.provide(ServerDiscoveryDefault),
+			// On error, fall back to default server
+			Effect.catchAll(() => Effect.succeed([DEFAULT_SERVER])),
+		),
 
-	return { servers, loading, error }
-}
-
-/**
- * React hook to get the current "best" server
- *
- * Uses heuristic to select best server:
- * 1. First server with non-empty directory (active project)
- * 2. Otherwise, first server in list
- * 3. Falls back to localhost:4056 if discovery fails
- *
- * @returns ServerInfo for the current best server
- *
- * @example
- * ```tsx
- * const currentServer = useCurrentServer()
- * const client = createClient(currentServer.directory)
- * ```
- */
-export function useCurrentServer(): ServerInfo {
-	const { servers } = useServers()
-	return selectBestServer(servers)
+	/**
+	 * Get the current "best" server
+	 *
+	 * Uses heuristic to select best server:
+	 * 1. First server with non-empty directory (active project)
+	 * 2. Otherwise, first server in list
+	 * 3. Falls back to localhost:4056 if discovery fails
+	 *
+	 * @returns Effect that yields the best ServerInfo (never fails)
+	 *
+	 * @example
+	 * ```typescript
+	 * const currentServer = await Effect.runPromise(ServerAtom.currentServer())
+	 * const client = createClient(currentServer.directory)
+	 * ```
+	 */
+	currentServer: (): Effect.Effect<ServerInfo, never> =>
+		ServerAtom.discover().pipe(Effect.map(selectBestServer)),
 }

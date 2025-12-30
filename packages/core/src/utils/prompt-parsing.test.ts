@@ -7,8 +7,8 @@ import {
 	renderPartsToDOM,
 	detectAtTrigger,
 	detectSlashTrigger,
-} from "./prompt-parsing"
-import type { Prompt } from "@/types/prompt"
+} from "./prompt-parsing.js"
+import type { Prompt } from "../types/prompt.js"
 
 // Node type constants
 const TEXT_NODE = 3

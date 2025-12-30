@@ -39,7 +39,9 @@ import {
 } from "react"
 import type { GlobalEvent } from "@opencode-ai/sdk/client"
 import { EventSourceParserStream } from "eventsource-parser/stream"
-import { useSSEConnection, sseAtom } from "../atoms/sse"
+// TODO: Re-enable Effect-based SSE when ready
+// import { useSSEEffect } from "@opencode-vibe/react"
+// import { sseAtom } from "@opencode-vibe/core/atoms"
 
 /**
  * Event types that can be subscribed to
@@ -158,8 +160,8 @@ export function SSEProvider({
 	const configRef = useRef({ url, retryDelay, maxRetries })
 	configRef.current = { url, retryDelay, maxRetries }
 
-	// ATOM INTEGRATION: Use Effect.Stream-based connection (always call hook, conditionally use)
-	const atomConnection = useSSEConnection(sseAtom)
+	// TODO: ATOM INTEGRATION - Re-enable Effect.Stream-based connection when ready
+	// const atomConnection = useSSEEffect({ url });
 
 	/**
 	 * Dispatch event to all subscribers of that event type
@@ -425,13 +427,11 @@ export function SSEProvider({
 		setMounted(true)
 	}, [])
 
-	// ATOM INTEGRATION: Dispatch atom events to subscribers when flag enabled
-	useEffect(() => {
-		if (!USE_SSE_ATOM || !atomConnection.latestEvent) return
-
-		// Dispatch to subscribers via the same queueEvent mechanism
-		queueEventRef.current(atomConnection.latestEvent)
-	}, [atomConnection.latestEvent])
+	// TODO: ATOM INTEGRATION - Re-enable when Effect-based SSE is ready
+	// useEffect(() => {
+	// 	if (!USE_SSE_ATOM || !atomConnection.latestEvent) return
+	// 	queueEventRef.current(atomConnection.latestEvent)
+	// }, [atomConnection.latestEvent])
 
 	// Handle visibility changes - disconnect when backgrounded, reconnect when foregrounded
 	useEffect(() => {
@@ -479,8 +479,8 @@ export function SSEProvider({
 
 	const value: SSEContextValue = {
 		subscribe,
-		// Use atom connection state if flag enabled, otherwise use fetch-based state
-		connected: USE_SSE_ATOM ? atomConnection.connected : connectedRef.current,
+		// TODO: Use atom connection state when Effect-based SSE is ready
+		connected: connectedRef.current,
 		reconnect,
 	}
 

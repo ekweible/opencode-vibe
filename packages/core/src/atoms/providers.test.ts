@@ -1,12 +1,12 @@
 /**
  * Tests for provider atoms
  *
- * These tests verify the React hooks that fetch provider data from the SDK.
- * Focus: provider list fetching, loading states, error handling.
+ * These tests verify the Effect programs that fetch provider data from the SDK.
+ * Focus: provider list fetching, type safety, transformation logic.
  */
 
 import { describe, expect, it } from "vitest"
-import type { Provider } from "./providers"
+import type { Provider } from "./providers.js"
 
 /**
  * Expected provider shape after transformation
@@ -30,29 +30,32 @@ const mockProviders: Provider[] = [
 	},
 ]
 
-describe("useProviders hook", () => {
-	it("should exist and be callable", async () => {
-		const { useProviders } = await import("./providers")
-		expect(typeof useProviders).toBe("function")
+describe("ProviderAtom namespace", () => {
+	it("should export ProviderAtom namespace", async () => {
+		const { ProviderAtom } = await import("./providers.js")
+		expect(ProviderAtom).toBeDefined()
+		expect(typeof ProviderAtom.list).toBe("function")
+	})
+
+	it("ProviderAtom.list should return an Effect", async () => {
+		const { ProviderAtom } = await import("./providers.js")
+		const effect = ProviderAtom.list()
+
+		// Effect programs have _tag and other Effect properties
+		expect(effect).toBeDefined()
+		expect(typeof effect).toBe("object")
 	})
 })
 
 describe("Provider type exports", () => {
 	it("should export Provider interface", async () => {
-		const module = await import("./providers")
+		const module = await import("./providers.js")
 		// Check that the module can be imported without errors
 		expect(module).toBeDefined()
 	})
 
 	it("should export Model interface", async () => {
-		const module = await import("./providers")
+		const module = await import("./providers.js")
 		expect(module).toBeDefined()
-	})
-})
-
-describe("selectBestProvider utility (if needed)", () => {
-	it("should select first provider when available", () => {
-		// This might not be needed - placeholder for future logic
-		expect(true).toBe(true)
 	})
 })

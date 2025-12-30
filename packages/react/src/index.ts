@@ -55,3 +55,22 @@ export type {
 	ContextUsage,
 	CompactionState,
 } from "./store"
+
+// Effect-based hooks (Phase 3b: Effect atom migration)
+export {
+	useServersEffect,
+	useCurrentServerEffect,
+	type UseServersEffectReturn,
+	type UseCurrentServerEffectReturn,
+	type ServerInfo,
+} from "./hooks/use-servers-effect"
+export {
+	useSessionList,
+	type UseSessionListOptions,
+	type UseSessionListReturn,
+} from "./hooks/use-session-list"
+export {
+	useSSEEffect,
+	type UseSSEEffectOptions,
+	type UseSSEEffectReturn,
+} from "./hooks/use-sse-effect"

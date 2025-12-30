@@ -5,7 +5,7 @@
  * for submission to the OpenCode backend.
  */
 
-import type { Prompt, FileAttachmentPart } from "@/types/prompt"
+import type { Prompt, FileAttachmentPart } from "../types/prompt.js"
 
 export interface TextPartInput {
 	id: string

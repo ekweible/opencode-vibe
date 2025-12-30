@@ -5,7 +5,7 @@ import { useOpenCode } from "@/react"
 import { useOpencodeStore } from "@opencode-vibe/react"
 import { useMessages } from "@opencode-vibe/react"
 import { useMessagesWithParts } from "@opencode-vibe/react"
-import { multiServerSSE } from "@/core/multi-server-sse"
+import { multiServerSSE } from "@opencode-vibe/core/sse"
 
 interface DebugPanelProps {
 	sessionId: string

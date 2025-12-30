@@ -5,7 +5,7 @@
  * This is the main entry point - for specific modules, import from subpaths:
  *
  * - @opencode-vibe/core/router - Effect-based router
- * - @opencode-vibe/core/atoms - State atoms (planned)
+ * - @opencode-vibe/core/atoms - State atoms
  * - @opencode-vibe/core/discovery - Server discovery
  * - @opencode-vibe/core/sse - SSE streaming
  * - @opencode-vibe/core/client - API client
@@ -15,6 +15,7 @@
 
 // Re-export main modules
 export * from "./router/index.js"
+export * from "./atoms/index.js"
 export * from "./discovery/index.js"
 export * from "./sse/index.js"
 export * from "./client/index.js"

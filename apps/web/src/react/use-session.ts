@@ -37,12 +37,12 @@ import { useOpencodeStore, type Session } from "./store"
 import { useOpenCode } from "./provider"
 import { Binary } from "@/lib/binary"
 
-// Re-export atoms/sessions.ts for convenience (Phase 3b: Effect atom migration)
+// Re-export React hooks from @opencode-vibe/react (Phase 3b: Effect atom migration)
 export {
 	useSessionList,
-	type SessionListState,
 	type UseSessionListOptions,
-} from "@/atoms/sessions"
+	type UseSessionListReturn,
+} from "@opencode-vibe/react"
 
 /**
  * useSession - Get session from store (automatically updates via SSE)

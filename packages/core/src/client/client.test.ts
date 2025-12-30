@@ -1,39 +1,58 @@
 /**
- * Tests for OpenCode client factory
+ * Tests for OpenCode client routing utilities
  */
 
 import { describe, expect, it } from "vitest"
-import { createClient, OPENCODE_URL } from "./client"
+import { getClientUrl, OPENCODE_URL, type RoutingContext } from "./client.js"
 
-describe("createClient", () => {
-	it("creates client with default URL when no args", () => {
-		const client = createClient()
-
-		expect(client).toBeDefined()
-		// Client should be using the OPENCODE_URL constant
+describe("getClientUrl", () => {
+	it("returns default URL when no args", () => {
+		const url = getClientUrl()
+		expect(url).toBe(OPENCODE_URL)
 	})
 
-	it("creates client with directory parameter", () => {
-		const client = createClient("/path/to/project")
-
-		expect(client).toBeDefined()
+	it("returns default URL when no routing context", () => {
+		const url = getClientUrl("/path/to/project")
+		expect(url).toBe(OPENCODE_URL)
 	})
 
-	it("creates client with directory and sessionId", () => {
-		const client = createClient("/path/to/project", "session-123")
+	it("returns default URL when routing context has no servers", () => {
+		const context: RoutingContext = { servers: [] }
+		const url = getClientUrl("/path/to/project", undefined, context)
+		expect(url).toBe(OPENCODE_URL)
+	})
 
-		expect(client).toBeDefined()
+	it("routes to directory server when available", () => {
+		const context: RoutingContext = {
+			servers: [{ port: 4057, directory: "/path/to/project", url: "http://127.0.0.1:4057" }],
+		}
+		const url = getClientUrl("/path/to/project", undefined, context)
+		expect(url).toBe("http://127.0.0.1:4057")
+	})
+
+	it("routes to session server when cached", () => {
+		const sessionToPort = new Map([["ses_123", 4058]])
+		const context: RoutingContext = {
+			servers: [
+				{ port: 4057, directory: "/path/to/project", url: "http://127.0.0.1:4057" },
+				{ port: 4058, directory: "/other/project", url: "http://127.0.0.1:4058" },
+			],
+			sessionToPort,
+		}
+		const url = getClientUrl("/path/to/project", "ses_123", context)
+		expect(url).toBe("http://127.0.0.1:4058")
+	})
+
+	it("falls back to directory when session not cached", () => {
+		const context: RoutingContext = {
+			servers: [{ port: 4057, directory: "/path/to/project", url: "http://127.0.0.1:4057" }],
+		}
+		const url = getClientUrl("/path/to/project", "ses_unknown", context)
+		expect(url).toBe("http://127.0.0.1:4057")
 	})
 
 	it("exports OPENCODE_URL constant", () => {
 		expect(OPENCODE_URL).toBe("http://localhost:4056")
-	})
-
-	it("returns client with expected namespaces", () => {
-		const client = createClient()
-
-		expect(typeof client.session).toBe("object")
-		expect(typeof client.provider).toBe("object")
 	})
 })
 
@@ -43,9 +62,11 @@ describe("regression prevention (from semantic memory)", () => {
 		// from "http://localhost:4056" to empty string broke the app.
 		// See semantic memory: "Multi-server SSE discovery broke the app..."
 
-		// Even if discovery returns nothing, client should work
-		const client = createClient()
-		expect(client).toBeDefined()
+		// Even if discovery returns nothing, routing should work
+		const url = getClientUrl()
+		expect(url).toBeTruthy()
+		expect(url).not.toBe("")
+		expect(url).toBe("http://localhost:4056")
 
 		// The URL constant should NEVER be empty
 		expect(OPENCODE_URL).toBeTruthy()

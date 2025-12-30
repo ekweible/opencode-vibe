@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation"
 import { Suspense } from "react"
-import { createClient } from "@/core/client"
+import { createClient } from "@/lib/client"
 import { transformMessages, type OpenCodeMessage } from "@/lib/transform-messages"
 import type { Session } from "@opencode-ai/sdk/client"
 import { SessionLayout } from "./session-layout"

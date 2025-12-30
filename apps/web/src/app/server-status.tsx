@@ -4,13 +4,13 @@
  * Server Status Display Component
  *
  * Client component that shows discovered OpenCode servers.
- * Uses Effect-based discovery hooks from atoms/servers.
+ * Uses Effect-based discovery hooks from @opencode-vibe/react.
  */
 
-import { useServers } from "@/atoms"
+import { useServersEffect } from "@opencode-vibe/react"
 
 export function ServerStatus() {
-	const { servers, loading, error } = useServers()
+	const { servers, loading, error } = useServersEffect()
 
 	if (loading) {
 		return <div className="text-xs text-muted-foreground">Discovering servers...</div>

@@ -19,7 +19,7 @@
  */
 
 import { useEffect } from "react"
-import { multiServerSSE } from "@/core/multi-server-sse"
+import { multiServerSSE } from "@opencode-vibe/core/sse"
 import { useOpencodeStore } from "./store"
 
 /**

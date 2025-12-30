@@ -1,4 +1,4 @@
-import { createClient, globalClient } from "@/core/client"
+import { createClient, globalClient } from "@/lib/client"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { OpenCodeLogo } from "@/components/opencode-logo"
 import { ProjectsList } from "./projects-list"

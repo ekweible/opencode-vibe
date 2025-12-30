@@ -12,3 +12,5 @@ export type {
 	Prompt,
 	SlashCommand,
 } from "./prompt.js"
+
+export type { Session, Message, Part } from "./domain.js"
