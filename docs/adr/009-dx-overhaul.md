@@ -10,11 +10,11 @@
 
 ## Context
 
-Four comprehensive audits revealed a critical DX problem: **OpenCode Vibe's React integration is significantly more complex than industry benchmarks like uploadthing.**
+Four comprehensive audits revealed a critical DX problem: **opencode-vibe's React integration is significantly more complex than industry benchmarks like uploadthing.**
 
 ### The DX Gap
 
-| Aspect | uploadthing | OpenCode (current) | Target |
+| Aspect | uploadthing | opencode-vibe (current) | Target |
 |--------|-------------|-------------------|--------|
 | **Hooks per component** | 1 | 11 | 1 |
 | **Provider nesting** | 0 | Yes (required) | 0 |
@@ -87,9 +87,9 @@ export * from "@opencode-vibe/react"
 
 #### 4. Missing uploadthing Patterns (Audit 09)
 
-**Problem:** OpenCode doesn't use proven DX patterns that uploadthing uses:
+**Problem:** opencode-vibe doesn't use proven DX patterns that uploadthing uses:
 
-| Pattern | uploadthing | OpenCode | Impact |
+| Pattern | uploadthing | opencode-vibe | Impact |
 |---------|-------------|----------|--------|
 | **Builder API** | ✅ `f().middleware().onComplete()` | ❌ Monolithic config | Poor autocomplete |
 | **Framework adapters** | ✅ `uploadthing/next` | ❌ Generic only | No tree-shaking |
@@ -162,7 +162,7 @@ useCreateSession, useFileSearch, useCommands
 
 ## Decision
 
-**We will overhaul OpenCode Vibe's DX in 5 tracks to achieve uploadthing-level simplicity.**
+**We will overhaul opencode-vibe's DX in 5 tracks to achieve uploadthing-level simplicity.**
 
 ### The Five Tracks
 
@@ -539,7 +539,7 @@ Add documentation to clarify when to use web vs core client:
 ```typescript
 // apps/web/src/lib/client.ts
 /**
- * OpenCode SDK client factory for Next.js web app
+ * opencode-vibe SDK client factory for Next.js web app
  *
  * This is the NEXT.JS-SPECIFIC version that uses:
  * - process.env.NEXT_PUBLIC_OPENCODE_URL (Next.js env var)
@@ -839,7 +839,7 @@ const { directory } = useOpencodeConfig() // Reads from globalThis, no fetch
 
 **What:** Fluent chainable methods that progressively build up types.
 
-**Apply to OpenCode:**
+**Apply to opencode-vibe:**
 
 ```typescript
 // Instead of monolithic config:
@@ -870,7 +870,7 @@ const client = createOpencodeClient()
 
 **What:** Separate entry points per framework (`uploadthing/next`, `uploadthing/express`).
 
-**Apply to OpenCode:**
+**Apply to opencode-vibe:**
 
 ```typescript
 // packages/core/src/adapters/next.ts
@@ -895,7 +895,7 @@ export { createExpressMiddleware } from "./express-handler"
 
 **What:** User creates typed helper file, not direct imports.
 
-**Apply to OpenCode:**
+**Apply to opencode-vibe:**
 
 ```typescript
 // apps/web/src/lib/opencode.ts
@@ -925,7 +925,7 @@ export const {
 
 **What:** Use symbols for "special" return values that don't pollute user's data.
 
-**Apply to OpenCode:**
+**Apply to opencode-vibe:**
 
 ```typescript
 // Instead of reserved key names:
@@ -988,7 +988,7 @@ const { startUpload } = useUploadThing("videoAndImage") // Fully typed
 
 **What:** Minimal example is 3 files, advanced features opt-in.
 
-**Target for OpenCode:**
+**Target for opencode-vibe:**
 
 ```
 src/lib/opencode.ts           ← Generate helpers (config bound once)
@@ -1009,7 +1009,7 @@ src/app/session/[id]/page.tsx ← Use useSession hook
 **What uploadthing does:** Uses Effect-TS internally but hides it behind adapters.
 
 **Why we should avoid:**
-- OpenCode is already Effect-heavy internally
+- opencode-vibe is already Effect-heavy internally
 - Risk: Effect leaking into user-facing API
 - Better: Keep Effect in service layer, expose vanilla TS at SDK boundary
 
@@ -1251,7 +1251,7 @@ export function SessionLayout({ sessionId, directory }) {
 
 ## Conclusion
 
-The current DX is 10x more complex than industry benchmarks. This overhaul brings OpenCode Vibe to uploadthing-level simplicity through:
+The current DX is 10x more complex than industry benchmarks. This overhaul brings opencode-vibe to uploadthing-level simplicity through:
 
 1. **Track 1 (4-5 hours):** Extract ~240 lines of business logic to core - enables CLI/desktop reuse
 2. **Track 2 (2-3 hours):** Reduce public API from 30+ exports to 9 - matches uploadthing surface area
