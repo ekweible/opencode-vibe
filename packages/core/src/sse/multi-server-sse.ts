@@ -272,7 +272,8 @@ export class MultiServerSSE {
 					if (done) break
 
 					try {
-						const event = JSON.parse(value.data)
+						// EventSourceParserStream returns ParsedEvent with data property
+						const event = JSON.parse((value as { data: string }).data)
 						this.handleEvent(port, event)
 					} catch {
 						// Parse error - skip malformed event
