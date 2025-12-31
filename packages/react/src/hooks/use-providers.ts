@@ -29,9 +29,9 @@
 
 "use client"
 
+import { useState, useEffect } from "react"
 import { providers } from "@opencode-vibe/core/api"
 import type { Provider, Model } from "@opencode-vibe/core/atoms"
-import { useFetch } from "./use-fetch"
 
 export interface UseProvidersReturn {
 	/** Array of providers with their models */
@@ -50,9 +50,41 @@ export interface UseProvidersReturn {
  * @returns Object with providers, loading, error, and refetch
  */
 export function useProviders(): UseProvidersReturn {
-	const { data, loading, error, refetch } = useFetch(() => providers.list(), undefined, {
-		initialData: [],
-	})
+	const [data, setData] = useState<Provider[]>([])
+	const [loading, setLoading] = useState(true)
+	const [error, setError] = useState<Error | null>(null)
+	const [refreshKey, setRefreshKey] = useState(0)
+
+	useEffect(() => {
+		let cancelled = false
+
+		async function fetchProviders() {
+			try {
+				setLoading(true)
+				const result = await providers.list()
+				if (!cancelled) {
+					setData(result)
+					setError(null)
+				}
+			} catch (err) {
+				if (!cancelled) {
+					setError(err instanceof Error ? err : new Error(String(err)))
+				}
+			} finally {
+				if (!cancelled) {
+					setLoading(false)
+				}
+			}
+		}
+
+		fetchProviders()
+
+		return () => {
+			cancelled = true
+		}
+	}, [refreshKey])
+
+	const refetch = () => setRefreshKey((k) => k + 1)
 
 	return {
 		providers: data,

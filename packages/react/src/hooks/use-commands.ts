@@ -25,10 +25,9 @@
  * ```
  */
 
-import { useMemo, useCallback } from "react"
+import { useMemo, useCallback, useState, useEffect } from "react"
 import { commands as commandsApi } from "@opencode-vibe/core/api"
 import type { SlashCommand } from "../types/prompt"
-import { useFetch } from "./use-fetch"
 
 /**
  * Options for useCommands hook
@@ -74,20 +73,45 @@ export function useCommands(options: UseCommandsOptions = {}) {
 	const { directory } = options
 
 	// Fetch custom commands from API using discovered server
-	const {
-		data: apiCommands,
-		loading,
-		error,
-	} = useFetch(() => commandsApi.list(directory), directory, {
-		initialData: [],
-		onError: (err) => {
-			// Only log if we have a directory (server should be reachable)
-			// Silent fail if no directory - may be during SSR or before discovery
-			if (directory) {
-				console.error("Failed to fetch custom commands:", err)
+	const [apiCommands, setApiCommands] = useState<Array<{ name: string; description?: string }>>([])
+	const [loading, setLoading] = useState(true)
+	const [error, setError] = useState<Error | null>(null)
+
+	useEffect(() => {
+		let cancelled = false
+
+		async function fetchCommands() {
+			if (!directory) {
+				setLoading(false)
+				return
 			}
-		},
-	})
+
+			try {
+				setLoading(true)
+				const commands = await commandsApi.list(directory)
+				if (!cancelled) {
+					setApiCommands(commands)
+					setError(null)
+				}
+			} catch (err) {
+				if (!cancelled) {
+					const error = err instanceof Error ? err : new Error(String(err))
+					setError(error)
+					console.error("Failed to fetch custom commands:", error)
+				}
+			} finally {
+				if (!cancelled) {
+					setLoading(false)
+				}
+			}
+		}
+
+		fetchCommands()
+
+		return () => {
+			cancelled = true
+		}
+	}, [directory])
 
 	// Map API response to SlashCommand format
 	const customCommands = useMemo(

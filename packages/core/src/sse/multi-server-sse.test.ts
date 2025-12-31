@@ -1,0 +1,230 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
+import {
+	MultiServerSSE,
+	HEALTH_TIMEOUT_MS,
+	BASE_BACKOFF_MS,
+	MAX_BACKOFF_MS,
+	calculateBackoff,
+} from "./multi-server-sse.js"
+
+/**
+ * Backoff calculation tests - pure function, no mocking needed
+ */
+describe("calculateBackoff", () => {
+	it("should use base delay for first attempt", () => {
+		// With jitter, should be between BASE and BASE * 1.2
+		const delay = calculateBackoff(0)
+		expect(delay).toBeGreaterThanOrEqual(BASE_BACKOFF_MS)
+		expect(delay).toBeLessThanOrEqual(BASE_BACKOFF_MS * 1.2)
+	})
+
+	it("should double delay on each attempt (before jitter)", () => {
+		// Test the base delays without jitter by checking ranges
+		// attempt 1: 2s base → 2-2.4s with jitter
+		const delay1 = calculateBackoff(1)
+		expect(delay1).toBeGreaterThanOrEqual(2000)
+		expect(delay1).toBeLessThanOrEqual(2400)
+
+		// attempt 2: 4s base → 4-4.8s with jitter
+		const delay2 = calculateBackoff(2)
+		expect(delay2).toBeGreaterThanOrEqual(4000)
+		expect(delay2).toBeLessThanOrEqual(4800)
+
+		// attempt 3: 8s base → 8-9.6s with jitter
+		const delay3 = calculateBackoff(3)
+		expect(delay3).toBeGreaterThanOrEqual(8000)
+		expect(delay3).toBeLessThanOrEqual(9600)
+	})
+
+	it("should cap at max delay", () => {
+		// attempt 5: 32s capped to 30s → 30-36s with jitter
+		const delay5 = calculateBackoff(5)
+		expect(delay5).toBeGreaterThanOrEqual(MAX_BACKOFF_MS)
+		expect(delay5).toBeLessThanOrEqual(MAX_BACKOFF_MS * 1.2)
+
+		// attempt 10: still capped
+		const delay10 = calculateBackoff(10)
+		expect(delay10).toBeGreaterThanOrEqual(MAX_BACKOFF_MS)
+		expect(delay10).toBeLessThanOrEqual(MAX_BACKOFF_MS * 1.2)
+	})
+
+	it("should add jitter (not deterministic)", () => {
+		// Call multiple times - should get different values
+		const delays = new Set<number>()
+		for (let i = 0; i < 10; i++) {
+			delays.add(calculateBackoff(2))
+		}
+		// With jitter, we should get at least a few different values
+		expect(delays.size).toBeGreaterThan(1)
+	})
+})
+
+/**
+ * Connection state tracking tests
+ */
+describe("MultiServerSSE connection status", () => {
+	beforeEach(() => {
+		vi.useFakeTimers()
+	})
+
+	afterEach(() => {
+		vi.useRealTimers()
+		vi.restoreAllMocks()
+	})
+
+	it("should start with no connections", () => {
+		const sse = new MultiServerSSE()
+		expect(sse.isConnected()).toBe(false)
+		expect(sse.getConnectionStatus().size).toBe(0)
+	})
+
+	it("should track connection status after discovery", async () => {
+		const sse = new MultiServerSSE()
+
+		// Mock fetch to return a server
+		vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
+			if (url === "/api/opencode-servers") {
+				return new Response(JSON.stringify([{ port: 3000, pid: 123, directory: "/test" }]))
+			}
+			// SSE connection - return a readable stream that stays open
+			return new Response(new ReadableStream(), {
+				headers: { "Content-Type": "text/event-stream" },
+			})
+		})
+
+		sse.start()
+
+		// Wait for discovery
+		await vi.advanceTimersByTimeAsync(100)
+
+		// Should have a connecting/connected state for port 3000
+		const status = sse.getConnectionStatus()
+		expect(status.has(3000)).toBe(true)
+
+		sse.stop()
+	})
+
+	it("should report disconnected after stop", async () => {
+		const sse = new MultiServerSSE()
+
+		vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
+			if (url === "/api/opencode-servers") {
+				return new Response(JSON.stringify([{ port: 3000, pid: 123, directory: "/test" }]))
+			}
+			return new Response(new ReadableStream(), {
+				headers: { "Content-Type": "text/event-stream" },
+			})
+		})
+
+		sse.start()
+		await vi.advanceTimersByTimeAsync(100)
+
+		sse.stop()
+
+		expect(sse.isConnected()).toBe(false)
+	})
+})
+
+/**
+ * Health monitoring tests
+ */
+describe("MultiServerSSE health monitoring", () => {
+	beforeEach(() => {
+		vi.useFakeTimers()
+	})
+
+	afterEach(() => {
+		vi.useRealTimers()
+		vi.restoreAllMocks()
+	})
+
+	it("should track last event time per connection", async () => {
+		const sse = new MultiServerSSE()
+
+		// Create a mock stream that sends events
+		const mockStream = new ReadableStream({
+			start(controller) {
+				controller.enqueue(
+					new TextEncoder().encode(
+						`data: ${JSON.stringify({ directory: "/test", payload: { type: "heartbeat", properties: {} } })}\n\n`,
+					),
+				)
+			},
+		})
+
+		vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
+			if (url === "/api/opencode-servers") {
+				return new Response(JSON.stringify([{ port: 3000, pid: 123, directory: "/test" }]))
+			}
+			return new Response(mockStream, {
+				headers: { "Content-Type": "text/event-stream" },
+			})
+		})
+
+		sse.start()
+		await vi.advanceTimersByTimeAsync(100)
+
+		// Get connection health - should have recent activity after connect
+		const health = sse.getConnectionHealth()
+		expect(health.has(3000)).toBe(true)
+
+		const lastEventTime = health.get(3000)
+		expect(lastEventTime).toBeDefined()
+		expect(Date.now() - lastEventTime!).toBeLessThan(1000)
+
+		sse.stop()
+	})
+
+	it("should have HEALTH_TIMEOUT constant of 60 seconds", () => {
+		expect(HEALTH_TIMEOUT_MS).toBe(60000)
+	})
+})
+
+/**
+ * Exponential backoff behavior tests
+ */
+describe("MultiServerSSE reconnection behavior", () => {
+	beforeEach(() => {
+		vi.useFakeTimers()
+	})
+
+	afterEach(() => {
+		vi.useRealTimers()
+		vi.restoreAllMocks()
+	})
+
+	it("should reset backoff on successful connection", async () => {
+		const sse = new MultiServerSSE()
+		let connectionAttempts = 0
+
+		vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
+			if (url === "/api/opencode-servers") {
+				return new Response(JSON.stringify([{ port: 3000, pid: 123, directory: "/test" }]))
+			}
+			connectionAttempts++
+			// First 2 attempts fail, third succeeds
+			if (connectionAttempts <= 2) {
+				throw new Error("Connection failed")
+			}
+			return new Response(new ReadableStream(), {
+				headers: { "Content-Type": "text/event-stream" },
+			})
+		})
+
+		sse.start()
+
+		// First attempt fails immediately
+		await vi.advanceTimersByTimeAsync(100)
+		expect(connectionAttempts).toBe(1)
+
+		// Wait for first backoff (1s + jitter, max ~1.2s)
+		await vi.advanceTimersByTimeAsync(1500)
+		expect(connectionAttempts).toBe(2)
+
+		// Wait for second backoff (2s + jitter, max ~2.4s)
+		await vi.advanceTimersByTimeAsync(3000)
+		expect(connectionAttempts).toBeGreaterThanOrEqual(3)
+
+		sse.stop()
+	})
+})

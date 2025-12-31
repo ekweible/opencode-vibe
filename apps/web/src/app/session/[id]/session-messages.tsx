@@ -270,19 +270,12 @@ export function SessionMessages({
 		return Object.values(initialStoreParts).flat() as Part[]
 	}, [initialStoreParts])
 
-	// Get messages with parts from API - hydrated from server data
-	const { messages: storeMessages } = useMessagesWithParts({
-		sessionId,
-		directory: directory || "/",
-		initialMessages: initialStoreMessages as CoreMessage[],
-		initialParts: initialPartsFlat,
-	})
+	// Get messages with parts from store
+	const storeMessages = useMessagesWithParts(sessionId)
 
-	// Get session status from API
-	const { running } = useSessionStatus({
-		sessionId,
-		directory: directory || "/",
-	})
+	// Get session status from store
+	const sessionStatus = useSessionStatus(sessionId)
+	const running = sessionStatus === "running"
 
 	// Transform store messages to UIMessage format (with extended metadata)
 	// Since we're hydrated, storeMessages always has data on first render

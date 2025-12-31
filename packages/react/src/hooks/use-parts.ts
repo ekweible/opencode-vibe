@@ -1,16 +1,13 @@
 /**
- * useParts - Bridge Promise API to React state with SSE updates
+ * useParts - Store selector for message parts with real-time SSE updates
  *
- * Wraps parts.list from @opencode-vibe/core/api and manages React state.
- * Subscribes to SSE events for real-time updates when parts are created/updated.
+ * Selects parts for a message from Zustand store populated by SSE events.
+ * Returns empty array if message has no parts (avoids undefined issues).
  *
  * @example
  * ```tsx
- * function PartList({ sessionId }: { sessionId: string }) {
- *   const { parts, loading, error, refetch } = useParts({ sessionId })
- *
- *   if (loading) return <div>Loading parts...</div>
- *   if (error) return <div>Error: {error.message}</div>
+ * function PartList({ messageId }: { messageId: string }) {
+ *   const parts = useParts(messageId)
  *
  *   return (
  *     <ul>
@@ -23,49 +20,19 @@
 
 "use client"
 
-import { parts } from "@opencode-vibe/core/api"
 import type { Part } from "@opencode-vibe/core/types"
-import { useSSEResource } from "./use-sse-resource"
+import { useOpencodeStore } from "../store"
+import { useOpencode } from "../providers"
 
-export interface UsePartsOptions {
-	/** Session ID to fetch parts for */
-	sessionId: string
-	/** Project directory (optional) */
-	directory?: string
-	/** Initial data from server (hydration) - skips initial fetch if provided */
-	initialData?: Part[]
-}
-
-export interface UsePartsReturn {
-	/** Array of parts, sorted by ID */
-	parts: Part[]
-	/** Loading state */
-	loading: boolean
-	/** Error if fetch failed */
-	error: Error | null
-	/** Refetch parts */
-	refetch: () => void
-}
+const EMPTY_PARTS: Part[] = []
 
 /**
- * Hook to fetch part list with real-time SSE updates
+ * Hook to get parts for a message from store
  *
- * @param options - Options with sessionId and optional directory
- * @returns Object with parts, loading, error, and refetch
+ * @param messageId - Message ID to fetch parts for
+ * @returns Array of parts, sorted by ID (empty array if none)
  */
-export function useParts(options: UsePartsOptions): UsePartsReturn {
-	const result = useSSEResource<Part>({
-		fetcher: () => parts.list(options.sessionId, options.directory),
-		eventType: "message.part.updated",
-		sessionIdFilter: options.sessionId,
-		getId: (part) => part.id,
-		initialData: options.initialData,
-	})
-
-	return {
-		parts: result.data,
-		loading: result.loading,
-		error: result.error,
-		refetch: result.refetch,
-	}
+export function useParts(messageId: string): Part[] {
+	const { directory } = useOpencode()
+	return useOpencodeStore((state) => state.directories[directory]?.parts[messageId] ?? EMPTY_PARTS)
 }

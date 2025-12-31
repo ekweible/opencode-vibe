@@ -1,16 +1,18 @@
 /**
- * useSessionList - Bridge Promise API to React state
+ * useSessionList - Get sessions from Zustand store
  *
- * Wraps sessions.list from @opencode-vibe/core/api and manages React state.
- * Provides loading, error, and data states for session list.
+ * Returns sessions array from the store (updated via SSE).
+ * No local state, no loading/error - just a selector.
+ *
+ * Filters out archived sessions automatically.
+ *
+ * Uses useMemo to avoid creating new array references on every render,
+ * which would cause infinite loops with useSyncExternalStore.
  *
  * @example
  * ```tsx
- * function SessionList({ directory }: { directory?: string }) {
- *   const { sessions, loading, error, refetch } = useSessionList({ directory })
- *
- *   if (loading) return <div>Loading sessions...</div>
- *   if (error) return <div>Error: {error.message}</div>
+ * function SessionList() {
+ *   const sessions = useSessionList()
  *
  *   return (
  *     <ul>
@@ -23,43 +25,31 @@
 
 "use client"
 
-import { sessions } from "@opencode-vibe/core/api"
-import type { Session } from "@opencode-vibe/core/types"
-import { useFetch } from "./use-fetch"
+import { useMemo } from "react"
+import type { Session } from "../store/types"
+import { useOpencodeStore } from "../store"
+import { useOpencode } from "../providers"
 
-export interface UseSessionListOptions {
-	/** Project directory (optional) */
-	directory?: string
-}
-
-export interface UseSessionListReturn {
-	/** Array of sessions, sorted by updated time descending */
-	sessions: Session[]
-	/** Loading state */
-	loading: boolean
-	/** Error if fetch failed */
-	error: Error | null
-	/** Refetch sessions */
-	refetch: () => void
-}
+const EMPTY_SESSIONS: Session[] = []
 
 /**
- * Hook to fetch session list using Promise API from core
+ * Hook to get all sessions from the store
  *
- * @param options - Options with optional directory
- * @returns Object with sessions, loading, error, and refetch
+ * Returns empty array if directory not initialized.
+ * Session list updates automatically via SSE events.
+ * Archived sessions are filtered out.
+ *
+ * @returns Array of sessions
  */
-export function useSessionList(options: UseSessionListOptions = {}): UseSessionListReturn {
-	const { data, loading, error, refetch } = useFetch(
-		(dir: string | undefined) => sessions.list(dir),
-		options.directory,
-		{ initialData: [] },
-	)
+export function useSessionList(): Session[] {
+	const { directory } = useOpencode()
 
-	return {
-		sessions: data,
-		loading,
-		error,
-		refetch,
-	}
+	// Select raw sessions array - stable reference from Immer
+	const sessions = useOpencodeStore((state) => state.directories[directory]?.sessions)
+
+	// Filter in useMemo to avoid creating new array on every render
+	return useMemo(() => {
+		if (!sessions) return EMPTY_SESSIONS
+		return sessions.filter((s) => !s.time?.archived)
+	}, [sessions])
 }

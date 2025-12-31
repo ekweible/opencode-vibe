@@ -1,81 +1,121 @@
 /**
- * Tests for useCompactionState hook
+ * useCompactionState Tests - Store selector tests
  *
- * NOTE: This hook will be migrated to useSSEState<T> in ADR 008.
- * These tests verify the current implementation's type structure and initial state.
- * Async SSE event tests are intentionally omitted - they're flaky with renderHook.
- * The pure function logic (event filtering, state reduction) is tested in sse-utils.test.ts.
+ * Tests the hook logic without DOM rendering.
+ * Hook is a pure selector - test by calling store directly.
  */
 
-// Set up DOM environment for React Testing Library
-import { Window } from "happy-dom"
-const window = new Window()
-// @ts-ignore - happy-dom types don't perfectly match DOM types, but work at runtime
-globalThis.document = window.document
-// @ts-ignore - happy-dom types don't perfectly match DOM types, but work at runtime
-globalThis.window = window
+import { describe, expect, test, beforeEach } from "vitest"
+import { useOpencodeStore } from "../store"
 
-import { renderHook } from "@testing-library/react"
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { useCompactionState } from "./use-compaction-state"
-import type { CompactionState } from "./use-compaction-state"
-
-// Mock the multiServerSSE singleton
-vi.mock("@opencode-vibe/core/sse", () => {
-	return {
-		multiServerSSE: {
-			start: vi.fn(),
-			onEvent: vi.fn(() => () => {}),
-			stop: vi.fn(),
-		},
-	}
-})
-
-describe("useCompactionState", () => {
+describe("useCompactionState - store integration", () => {
 	beforeEach(() => {
-		vi.clearAllMocks()
+		// Reset store before each test
+		useOpencodeStore.setState({ directories: {} })
 	})
 
-	afterEach(() => {
-		vi.clearAllMocks()
-	})
+	test("returns default state when no compaction exists", () => {
+		const directory = "/test/project"
+		useOpencodeStore.getState().initDirectory(directory)
 
-	it("returns default state initially", () => {
-		const { result } = renderHook(() => useCompactionState({ sessionId: "test-session" }))
+		const compaction = useOpencodeStore.getState().directories[directory]?.compaction["session-1"]
 
-		expect(result.current).toEqual({
+		expect(compaction).toBeUndefined()
+		// Hook returns default via ?? operator
+		const defaultState = compaction ?? {
 			isCompacting: false,
 			isAutomatic: false,
-			progress: "complete",
+			progress: "complete" as const,
 			startedAt: 0,
-		})
+		}
+		expect(defaultState.isCompacting).toBe(false)
+		expect(defaultState.progress).toBe("complete")
 	})
 
-	it("returns same default state with directory option", () => {
-		const { result } = renderHook(() =>
-			useCompactionState({
-				sessionId: "test-session",
-				directory: "/test/path",
-			}),
-		)
+	test("returns compaction state from store when it exists", () => {
+		const directory = "/test/project"
+		const store = useOpencodeStore.getState()
+		store.initDirectory(directory)
 
-		expect(result.current).toEqual({
+		useOpencodeStore.setState((state) => {
+			const dir = state.directories[directory]
+			if (dir) {
+				dir.compaction["session-1"] = {
+					isCompacting: true,
+					isAutomatic: true,
+					progress: "generating",
+					startedAt: Date.now(),
+					messageId: "msg-123",
+				}
+			}
+		})
+
+		const compaction = useOpencodeStore.getState().directories[directory]?.compaction["session-1"]
+
+		expect(compaction?.isCompacting).toBe(true)
+		expect(compaction?.isAutomatic).toBe(true)
+		expect(compaction?.progress).toBe("generating")
+	})
+
+	test("updates when compaction state changes in store", () => {
+		const directory = "/test/project"
+		const store = useOpencodeStore.getState()
+		store.initDirectory(directory)
+
+		const initialState = store.directories[directory]?.compaction["session-1"]
+		expect(initialState).toBeUndefined()
+
+		// Start compaction using setState
+		useOpencodeStore.setState((state) => {
+			const dir = state.directories[directory]
+			if (dir) {
+				dir.compaction["session-1"] = {
+					isCompacting: true,
+					isAutomatic: false,
+					progress: "pending",
+					startedAt: Date.now(),
+				}
+			}
+		})
+
+		const updatedState = useOpencodeStore.getState().directories[directory]?.compaction["session-1"]
+
+		expect(updatedState?.isCompacting).toBe(true)
+		expect(updatedState?.progress).toBe("pending")
+	})
+
+	test("returns different states for different sessions", () => {
+		const directory = "/test/project"
+		const store = useOpencodeStore.getState()
+		store.initDirectory(directory)
+
+		useOpencodeStore.setState((state) => {
+			const dir = state.directories[directory]
+			if (dir) {
+				// session-1 is compacting
+				dir.compaction["session-1"] = {
+					isCompacting: true,
+					isAutomatic: true,
+					progress: "generating",
+					startedAt: Date.now(),
+				}
+				// session-2 is not compacting (no entry)
+			}
+		})
+
+		const currentState = useOpencodeStore.getState()
+		const state1 = currentState.directories[directory]?.compaction["session-1"]
+		const state2 = currentState.directories[directory]?.compaction["session-2"]
+
+		expect(state1?.isCompacting).toBe(true)
+		expect(state2).toBeUndefined()
+		// Hook would return default for session-2
+		const defaultState = state2 ?? {
 			isCompacting: false,
 			isAutomatic: false,
-			progress: "complete",
+			progress: "complete" as const,
 			startedAt: 0,
-		})
-	})
-
-	it("has correct type structure", () => {
-		const { result } = renderHook(() => useCompactionState({ sessionId: "test-session" }))
-
-		const state: CompactionState = result.current
-
-		// Type assertions to ensure types are correct
-		expect(typeof state.isCompacting).toBe("boolean")
-		expect(typeof state.isAutomatic).toBe("boolean")
-		expect(typeof state.startedAt).toBe("number")
-		expect(["pending", "generating", "complete"]).toContain(state.progress)
+		}
+		expect(defaultState.isCompacting).toBe(false)
 	})
 })

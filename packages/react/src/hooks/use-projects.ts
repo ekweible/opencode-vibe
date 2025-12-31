@@ -32,9 +32,9 @@
 
 "use client"
 
+import { useState, useEffect } from "react"
 import { projects } from "@opencode-vibe/core/api"
 import type { Project } from "@opencode-vibe/core/atoms"
-import { useFetch } from "./use-fetch"
 
 export interface UseProjectsReturn {
 	/** Array of projects */
@@ -64,9 +64,41 @@ export interface UseCurrentProjectReturn {
  * @returns Object with projects, loading, error, and refetch
  */
 export function useProjects(): UseProjectsReturn {
-	const { data, loading, error, refetch } = useFetch(() => projects.list(), undefined, {
-		initialData: [],
-	})
+	const [data, setData] = useState<Project[]>([])
+	const [loading, setLoading] = useState(true)
+	const [error, setError] = useState<Error | null>(null)
+	const [refreshKey, setRefreshKey] = useState(0)
+
+	useEffect(() => {
+		let cancelled = false
+
+		async function fetchProjects() {
+			try {
+				setLoading(true)
+				const result = await projects.list()
+				if (!cancelled) {
+					setData(result)
+					setError(null)
+				}
+			} catch (err) {
+				if (!cancelled) {
+					setError(err instanceof Error ? err : new Error(String(err)))
+				}
+			} finally {
+				if (!cancelled) {
+					setLoading(false)
+				}
+			}
+		}
+
+		fetchProjects()
+
+		return () => {
+			cancelled = true
+		}
+	}, [refreshKey])
+
+	const refetch = () => setRefreshKey((k) => k + 1)
 
 	return {
 		projects: data,
@@ -82,9 +114,41 @@ export function useProjects(): UseProjectsReturn {
  * @returns Object with project, loading, error, and refetch
  */
 export function useCurrentProject(): UseCurrentProjectReturn {
-	const { data, loading, error, refetch } = useFetch(() => projects.current(), undefined, {
-		initialData: null,
-	})
+	const [data, setData] = useState<Project | null>(null)
+	const [loading, setLoading] = useState(true)
+	const [error, setError] = useState<Error | null>(null)
+	const [refreshKey, setRefreshKey] = useState(0)
+
+	useEffect(() => {
+		let cancelled = false
+
+		async function fetchCurrentProject() {
+			try {
+				setLoading(true)
+				const result = await projects.current()
+				if (!cancelled) {
+					setData(result)
+					setError(null)
+				}
+			} catch (err) {
+				if (!cancelled) {
+					setError(err instanceof Error ? err : new Error(String(err)))
+				}
+			} finally {
+				if (!cancelled) {
+					setLoading(false)
+				}
+			}
+		}
+
+		fetchCurrentProject()
+
+		return () => {
+			cancelled = true
+		}
+	}, [refreshKey])
+
+	const refetch = () => setRefreshKey((k) => k + 1)
 
 	return {
 		project: data,

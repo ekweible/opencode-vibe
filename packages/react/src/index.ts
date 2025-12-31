@@ -11,20 +11,10 @@ export {
 	useMultiServerSSE,
 	type UseMultiServerSSEOptions,
 } from "./hooks/use-multi-server-sse"
-export {
-	useMessages,
-	type UseMessagesOptions,
-	type UseMessagesReturn,
-} from "./hooks/use-messages"
-export {
-	useParts,
-	type UsePartsOptions,
-	type UsePartsReturn,
-} from "./hooks/use-parts"
+export { useMessages } from "./hooks/use-messages"
+export { useParts } from "./hooks/use-parts"
 export {
 	useMessagesWithParts,
-	type UseMessagesWithPartsOptions,
-	type UseMessagesWithPartsReturn,
 	type OpencodeMessage,
 } from "./hooks/use-messages-with-parts"
 export {
@@ -79,21 +69,10 @@ export {
 	type UseCurrentServerReturn,
 	type ServerInfo,
 } from "./hooks/use-servers"
-export {
-	useSession,
-	type UseSessionOptions,
-	type UseSessionReturn,
-} from "./hooks/use-session"
-export {
-	useSessionList,
-	type UseSessionListOptions,
-	type UseSessionListReturn,
-} from "./hooks/use-session-list"
-export {
-	useSessionStatus,
-	type UseSessionStatusOptions,
-	type SessionStatus,
-} from "./hooks/use-session-status"
+export { useSession } from "./hooks/use-session"
+export { useSessionList } from "./hooks/use-session-list"
+export { useSessionStatus } from "./hooks/use-session-status"
+export type { SessionStatus } from "./store/types"
 export {
 	useSubagents,
 	type UseSubagentsReturn,
@@ -105,19 +84,21 @@ export {
 	type UseSubagentOptions,
 	type UseSubagentReturn,
 } from "./hooks/use-subagent"
-export {
-	useContextUsage,
-	formatTokens,
-	type UseContextUsageOptions,
-	type ContextUsageState,
-} from "./hooks/use-context-usage"
-export {
-	useCompactionState,
-	type UseCompactionStateOptions,
-	type CompactionState,
-	type CompactionProgress,
-} from "./hooks/use-compaction-state"
+export { useContextUsage, formatTokens } from "./hooks/use-context-usage"
+export { useCompactionState } from "./hooks/use-compaction-state"
 export {
 	useSubagentSync,
 	type UseSubagentSyncOptions,
 } from "./hooks/use-subagent-sync"
+
+// Store (Phase 1: Core Store + Binary Utils)
+export {
+	useOpencodeStore,
+	usePartSummary,
+	type DirectoryState,
+	type ContextUsage,
+	type CompactionState as StoreCompactionState,
+	type FileDiff,
+	type Todo,
+	type GlobalEvent,
+} from "./store"

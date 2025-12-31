@@ -27,7 +27,9 @@ export interface SessionStatusProps {
  * SessionStatus component - displays running/idle/error indicator
  */
 export function SessionStatus({ sessionId, directory }: SessionStatusProps) {
-	const { running, isLoading } = useSessionStatus({ sessionId, directory })
+	const status = useSessionStatus(sessionId)
+	const running = status === "running"
+	const isLoading = false // No longer tracked - store is always in sync via SSE
 	const [error, setError] = useState<string | null>(null)
 	const { events } = useSSE({ url: "http://localhost:4056" })
 

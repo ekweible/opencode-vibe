@@ -1,16 +1,13 @@
 /**
- * useMessages - Bridge Promise API to React state with SSE updates
+ * useMessages - Store selector for messages with real-time SSE updates
  *
- * Wraps messages.list from @opencode-vibe/core/api and manages React state.
- * Subscribes to SSE events for real-time updates when messages are created/updated.
+ * Selects messages from Zustand store populated by SSE events.
+ * Returns empty array if session has no messages (avoids undefined issues).
  *
  * @example
  * ```tsx
  * function MessageList({ sessionId }: { sessionId: string }) {
- *   const { messages, loading, error, refetch } = useMessages({ sessionId })
- *
- *   if (loading) return <div>Loading messages...</div>
- *   if (error) return <div>Error: {error.message}</div>
+ *   const messages = useMessages(sessionId)
  *
  *   return (
  *     <ul>
@@ -23,49 +20,21 @@
 
 "use client"
 
-import { messages } from "@opencode-vibe/core/api"
 import type { Message } from "@opencode-vibe/core/types"
-import { useSSEResource } from "./use-sse-resource"
+import { useOpencodeStore } from "../store"
+import { useOpencode } from "../providers"
 
-export interface UseMessagesOptions {
-	/** Session ID to fetch messages for */
-	sessionId: string
-	/** Project directory (optional) */
-	directory?: string
-	/** Initial data from server (hydration) - skips initial fetch if provided */
-	initialData?: Message[]
-}
-
-export interface UseMessagesReturn {
-	/** Array of messages, sorted by ID */
-	messages: Message[]
-	/** Loading state */
-	loading: boolean
-	/** Error if fetch failed */
-	error: Error | null
-	/** Refetch messages */
-	refetch: () => void
-}
+const EMPTY_MESSAGES: Message[] = []
 
 /**
- * Hook to fetch message list with real-time SSE updates
+ * Hook to get messages for a session from store
  *
- * @param options - Options with sessionId and optional directory
- * @returns Object with messages, loading, error, and refetch
+ * @param sessionId - Session ID to fetch messages for
+ * @returns Array of messages, sorted by ID (empty array if none)
  */
-export function useMessages(options: UseMessagesOptions): UseMessagesReturn {
-	const result = useSSEResource<Message>({
-		fetcher: () => messages.list(options.sessionId, options.directory),
-		eventType: "message.updated",
-		sessionIdFilter: options.sessionId,
-		getId: (msg) => msg.id,
-		initialData: options.initialData,
-	})
-
-	return {
-		messages: result.data,
-		loading: result.loading,
-		error: result.error,
-		refetch: result.refetch,
-	}
+export function useMessages(sessionId: string): Message[] {
+	const { directory } = useOpencode()
+	return useOpencodeStore(
+		(state) => state.directories[directory]?.messages[sessionId] ?? EMPTY_MESSAGES,
+	)
 }

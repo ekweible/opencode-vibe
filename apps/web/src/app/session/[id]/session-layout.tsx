@@ -11,7 +11,6 @@ import {
 	useSendMessage,
 	useOpencode,
 	useSessionStatus,
-	useMultiServerSSE,
 	useSubagentSync,
 } from "@/react"
 import { NewSessionButton } from "./new-session-button"
@@ -118,22 +117,21 @@ function SessionContent({
 
 	const { directory: contextDirectory } = useOpencode()
 
-	// Subscribe to SSE events from all OpenCode servers
-	useMultiServerSSE()
-
+	// SSE events are handled by OpencodeProvider via useMultiServerSSE
 	// Subscribe to subagent SSE events for this session
 	// This enables real-time tracking of child sessions spawned via Task tool
 	useSubagentSync({ sessionId })
 
-	// Get reactive session data (uses Promise API)
-	const { session: fetchedSession } = useSession({ sessionId, directory: contextDirectory })
+	// Get reactive session data (store selector)
+	const fetchedSession = useSession(sessionId)
 	const session = fetchedSession ?? initialSession
 
-	// Get session running status for header indicator
-	const { running } = useSessionStatus({ sessionId, directory: contextDirectory })
+	// Get session running status for header indicator (store selector)
+	const status = useSessionStatus(sessionId)
+	const running = status === "running"
 
-	// Get reactive messages from store
-	const { messages: storeMessages } = useMessages({ sessionId, directory: contextDirectory })
+	// Get reactive messages from store (store selector)
+	const messages = useMessages(sessionId)
 
 	// Send message hook - use contextDirectory to ensure we route to the right server
 	const { sendMessage, isLoading, error, queueLength } = useSendMessage({
@@ -181,7 +179,7 @@ function SessionContent({
 							</Link>
 							<div className="flex items-center gap-4">
 								{/* Show message count from useMessages hook */}
-								<div className="text-xs text-muted-foreground">{storeMessages.length} messages</div>
+								<div className="text-xs text-muted-foreground">{messages.length} messages</div>
 								{/* Context usage bar with progress indicator */}
 								<ContextUsageBar sessionId={sessionId} />
 								<NewSessionButton directory={directory} />

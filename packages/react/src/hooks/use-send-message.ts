@@ -141,7 +141,8 @@ export function useSendMessage({
 	const processNextRef = useRef<(() => Promise<void>) | undefined>(undefined)
 
 	// Track session status to know when to process next message
-	const { running } = useSessionStatus({ sessionId, directory })
+	const status = useSessionStatus(sessionId)
+	const running = status === "running"
 
 	/**
 	 * Process a single message via router caller.

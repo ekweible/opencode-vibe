@@ -36,9 +36,9 @@
 
 "use client"
 
+import { useState, useEffect } from "react"
 import { servers } from "@opencode-vibe/core/api"
 import type { ServerInfo } from "@opencode-vibe/core/discovery"
-import { useFetch } from "./use-fetch"
 
 export interface UseServersReturn {
 	/** Array of discovered servers (always includes default) */
@@ -70,9 +70,41 @@ export interface UseCurrentServerReturn {
  * @returns Object with servers, loading, error, and refetch
  */
 export function useServers(): UseServersReturn {
-	const { data, loading, error, refetch } = useFetch(() => servers.discover(), undefined, {
-		initialData: [],
-	})
+	const [data, setData] = useState<ServerInfo[]>([])
+	const [loading, setLoading] = useState(true)
+	const [error, setError] = useState<Error | null>(null)
+	const [refreshKey, setRefreshKey] = useState(0)
+
+	useEffect(() => {
+		let cancelled = false
+
+		async function fetchServers() {
+			try {
+				setLoading(true)
+				const result = await servers.discover()
+				if (!cancelled) {
+					setData(result)
+					setError(null)
+				}
+			} catch (err) {
+				if (!cancelled) {
+					setError(err instanceof Error ? err : new Error(String(err)))
+				}
+			} finally {
+				if (!cancelled) {
+					setLoading(false)
+				}
+			}
+		}
+
+		fetchServers()
+
+		return () => {
+			cancelled = true
+		}
+	}, [refreshKey])
+
+	const refetch = () => setRefreshKey((k) => k + 1)
 
 	return {
 		servers: data,
@@ -93,9 +125,41 @@ export function useServers(): UseServersReturn {
  * @returns Object with server, loading, error, and refetch
  */
 export function useCurrentServer(): UseCurrentServerReturn {
-	const { data, loading, error, refetch } = useFetch(() => servers.currentServer(), undefined, {
-		initialData: null,
-	})
+	const [data, setData] = useState<ServerInfo | null>(null)
+	const [loading, setLoading] = useState(true)
+	const [error, setError] = useState<Error | null>(null)
+	const [refreshKey, setRefreshKey] = useState(0)
+
+	useEffect(() => {
+		let cancelled = false
+
+		async function fetchCurrentServer() {
+			try {
+				setLoading(true)
+				const result = await servers.currentServer()
+				if (!cancelled) {
+					setData(result)
+					setError(null)
+				}
+			} catch (err) {
+				if (!cancelled) {
+					setError(err instanceof Error ? err : new Error(String(err)))
+				}
+			} finally {
+				if (!cancelled) {
+					setLoading(false)
+				}
+			}
+		}
+
+		fetchCurrentServer()
+
+		return () => {
+			cancelled = true
+		}
+	}, [refreshKey])
+
+	const refetch = () => setRefreshKey((k) => k + 1)
 
 	return {
 		server: data,

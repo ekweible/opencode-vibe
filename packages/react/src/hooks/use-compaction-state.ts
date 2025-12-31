@@ -1,13 +1,13 @@
 /**
- * useCompactionState - Hook to track session compaction state
+ * useCompactionState - Store selector for session compaction state
  *
- * Monitors the state of prompt compaction for a given session via SSE events.
- * Subscribes to compaction.* events and updates state in real-time.
+ * Selects compaction state from Zustand store populated by message.updated SSE events.
+ * Returns default state if session has no active compaction.
  *
  * @example
  * ```tsx
  * function CompactionIndicator({ sessionId }: { sessionId: string }) {
- *   const { isCompacting, progress } = useCompactionState({ sessionId })
+ *   const { isCompacting, progress } = useCompactionState(sessionId)
  *
  *   if (!isCompacting) return null
  *
@@ -22,31 +22,14 @@
 
 "use client"
 
-import { useState } from "react"
-import { useMultiServerSSE } from "./use-multi-server-sse"
-import type { GlobalEvent } from "../types/events"
+import type { CompactionState } from "../store/types"
+import { useOpencodeStore } from "../store"
+import { useOpencode } from "../providers"
 
-export interface UseCompactionStateOptions {
-	/** Session ID to track compaction state for */
-	sessionId: string
-	/** Optional directory filter */
-	directory?: string
-}
-
-export type CompactionProgress = "pending" | "generating" | "complete"
-
-export interface CompactionState {
-	/** Whether compaction is currently in progress */
-	isCompacting: boolean
-	/** Whether this is an automatic compaction (vs user-triggered) */
-	isAutomatic: boolean
-	/** Current stage of compaction process */
-	progress: CompactionProgress
-	/** Timestamp when compaction started (0 if not compacting) */
-	startedAt: number
-}
-
-const DEFAULT_STATE: CompactionState = {
+/**
+ * Default compaction state when no compaction is active
+ */
+const DEFAULT_COMPACTION_STATE: CompactionState = {
 	isCompacting: false,
 	isAutomatic: false,
 	progress: "complete",
@@ -54,48 +37,14 @@ const DEFAULT_STATE: CompactionState = {
 }
 
 /**
- * Hook to get compaction state for a session
+ * Hook to get compaction state for a session from store
  *
- * Subscribes to SSE events for real-time compaction status updates.
- * Handles compaction.started, compaction.progress, and compaction.completed events.
- *
- * @param options - Options with sessionId and optional directory
- * @returns Current compaction state
+ * @param sessionId - Session ID to get compaction state for
+ * @returns Compaction state with isCompacting, progress, etc.
  */
-export function useCompactionState(options: UseCompactionStateOptions): CompactionState {
-	const [state, setState] = useState<CompactionState>(DEFAULT_STATE)
-
-	// Subscribe to SSE events
-	useMultiServerSSE({
-		onEvent: (event: GlobalEvent) => {
-			// Only process compaction events
-			if (!event.payload.type.startsWith("compaction.")) {
-				return
-			}
-
-			// Only process events for our session
-			if (event.payload.properties.sessionID !== options.sessionId) {
-				return
-			}
-
-			// Handle different compaction event types
-			if (event.payload.type === "compaction.started") {
-				setState({
-					isCompacting: true,
-					isAutomatic: Boolean(event.payload.properties.automatic),
-					progress: "pending",
-					startedAt: Number(event.payload.properties.timestamp) || Date.now(),
-				})
-			} else if (event.payload.type === "compaction.progress") {
-				setState((prev) => ({
-					...prev,
-					progress: (event.payload.properties.progress as CompactionProgress) || prev.progress,
-				}))
-			} else if (event.payload.type === "compaction.completed") {
-				setState(DEFAULT_STATE)
-			}
-		},
-	})
-
-	return state
+export function useCompactionState(sessionId: string): CompactionState {
+	const { directory } = useOpencode()
+	return useOpencodeStore(
+		(state) => state.directories[directory]?.compaction[sessionId] ?? DEFAULT_COMPACTION_STATE,
+	)
 }

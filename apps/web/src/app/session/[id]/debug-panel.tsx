@@ -29,9 +29,9 @@ export function DebugPanel({ sessionId, isOpen }: DebugPanelProps) {
 	} | null>(null)
 	const [copied, setCopied] = useState(false)
 	const { directory } = useOpencode()
-	const messagesWithParts = useMessagesWithParts({ sessionId })
-	const storeMessages = useMessages({ sessionId })
-	const storeParts = useParts({ sessionId })
+	const messagesWithParts = useMessagesWithParts(sessionId)
+	const storeMessages = useMessages(sessionId)
+	const storeParts = useParts(sessionId)
 
 	const [fetchError, setFetchError] = useState<string | null>(null)
 
@@ -87,9 +87,9 @@ export function DebugPanel({ sessionId, isOpen }: DebugPanelProps) {
 			port: s.port,
 			directory: s.directory,
 		})),
-		storeMessages: storeMessages.messages.length,
-		messagesWithParts: messagesWithParts.messages.length,
-		partsInStore: storeParts.parts.length,
+		storeMessages: storeMessages.length,
+		messagesWithParts: messagesWithParts.length,
+		partsInStore: storeParts.length,
 	}
 
 	const copyDebugInfo = async () => {
@@ -204,17 +204,12 @@ export function DebugPanel({ sessionId, isOpen }: DebugPanelProps) {
 			</div>
 
 			<div className="mb-2">
-				<span className="text-yellow-400">Store Messages:</span> {storeMessages.messages.length}
-				{storeMessages.loading && " (loading...)"}
-				{storeMessages.error && ` (error: ${storeMessages.error.message})`}
+				<span className="text-yellow-400">Store Messages:</span> {storeMessages.length}
 			</div>
 
 			<div className="mb-2">
-				<span className="text-yellow-400">Messages w/ Parts:</span>{" "}
-				{messagesWithParts.messages.length}
-				{messagesWithParts.loading && " (loading...)"}
-				{messagesWithParts.error && ` (error: ${messagesWithParts.error.message})`}
-				{messagesWithParts.messages.slice(-3).map((m) => (
+				<span className="text-yellow-400">Messages w/ Parts:</span> {messagesWithParts.length}
+				{messagesWithParts.slice(-3).map((m) => (
 					<div key={m.info.id} className="ml-2 text-gray-400">
 						{m.info.id.slice(0, 8)}... ({m.parts.length} parts)
 					</div>
@@ -222,9 +217,7 @@ export function DebugPanel({ sessionId, isOpen }: DebugPanelProps) {
 			</div>
 
 			<div className="mb-2">
-				<span className="text-yellow-400">Parts in Store:</span> {storeParts.parts.length}
-				{storeParts.loading && " (loading...)"}
-				{storeParts.error && ` (error: ${storeParts.error.message})`}
+				<span className="text-yellow-400">Parts in Store:</span> {storeParts.length}
 			</div>
 		</div>
 	)

@@ -11,7 +11,7 @@
 import { useEffect, useRef, useMemo, memo, useState, useCallback } from "react"
 import Link from "next/link"
 import { motion, AnimatePresence } from "framer-motion"
-import { useSSE, useMultiServerSSE, useLiveTime, useOpencode } from "@/react"
+import { useSSE, useLiveTime, useOpencode } from "@/react"
 import { createClient } from "@/lib/client"
 import type { GlobalEvent } from "@opencode-ai/sdk/client"
 
@@ -402,8 +402,7 @@ export function ProjectsList({ initialProjects }: ProjectsListProps) {
 	// Manage session statuses across all projects
 	const { sessionStatuses, lastActivity } = useSessionStatuses(initialProjects)
 
-	// Also subscribe to ALL opencode servers on the machine
-	useMultiServerSSE()
+	// SSE events are handled by OpencodeProvider via useMultiServerSSE
 
 	if (initialProjects.length === 0) {
 		return (

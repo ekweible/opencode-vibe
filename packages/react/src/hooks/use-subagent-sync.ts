@@ -8,7 +8,7 @@
 
 "use client"
 
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useCallback } from "react"
 import { useMultiServerSSE } from "./use-multi-server-sse.js"
 import { subagents } from "@opencode-vibe/core/api"
 import type { SubagentStateRef } from "@opencode-vibe/core/api"
@@ -57,6 +57,9 @@ export function useSubagentSync(options: UseSubagentSyncOptions): void {
 	const messageToSessionMap = useRef<Map<string, string>>(new Map())
 	// Queue parts that arrive before their message
 	const pendingParts = useRef<Map<string, Part[]>>(new Map())
+	// Use ref for options to avoid recreating callback
+	const optionsRef = useRef(options)
+	optionsRef.current = options
 
 	// Create subagent state on mount
 	useEffect(() => {
@@ -73,84 +76,85 @@ export function useSubagentSync(options: UseSubagentSyncOptions): void {
 		}
 	}, [])
 
-	// Helper to flush pending parts for a message
-	const flushPendingParts = (messageId: string, sessionId: string) => {
-		const pending = pendingParts.current.get(messageId)
-		if (pending && stateRef.current) {
-			for (const part of pending) {
-				void subagents.addPart(stateRef.current, sessionId, part.messageID, part)
-			}
-			pendingParts.current.delete(messageId)
-		}
-	}
+	// Stable event handler using refs
+	const handleEvent = useCallback((event: GlobalEvent) => {
+		if (!stateRef.current) return
 
-	// Helper to handle part events (created or updated)
-	const handlePartEvent = (part: Part, isUpdate: boolean) => {
-		const sessionID = messageToSessionMap.current.get(part.messageID)
-		if (sessionID && stateRef.current) {
-			// We have the message, process the part directly
-			if (isUpdate) {
-				void subagents.updatePart(stateRef.current, sessionID, part.messageID, part)
+		// Filter by directory if specified
+		if (optionsRef.current.directory && event.directory !== optionsRef.current.directory) {
+			return
+		}
+
+		const { type, properties } = event.payload
+
+		// Helper to flush pending parts for a message
+		const flushPendingParts = (messageId: string, sessionId: string) => {
+			const pending = pendingParts.current.get(messageId)
+			if (pending && stateRef.current) {
+				for (const part of pending) {
+					void subagents.addPart(stateRef.current, sessionId, part.messageID, part)
+				}
+				pendingParts.current.delete(messageId)
+			}
+		}
+
+		// Helper to handle part events (created or updated)
+		const handlePartEvent = (part: Part, isUpdate: boolean) => {
+			const sessionID = messageToSessionMap.current.get(part.messageID)
+			if (sessionID && stateRef.current) {
+				// We have the message, process the part directly
+				if (isUpdate) {
+					void subagents.updatePart(stateRef.current, sessionID, part.messageID, part)
+				} else {
+					void subagents.addPart(stateRef.current, sessionID, part.messageID, part)
+				}
 			} else {
-				void subagents.addPart(stateRef.current, sessionID, part.messageID, part)
+				// Message hasn't arrived yet, queue the part
+				const pending = pendingParts.current.get(part.messageID) || []
+				pending.push(part)
+				pendingParts.current.set(part.messageID, pending)
 			}
-		} else {
-			// Message hasn't arrived yet, queue the part
-			const pending = pendingParts.current.get(part.messageID) || []
-			pending.push(part)
-			pendingParts.current.set(part.messageID, pending)
 		}
-	}
 
-	// Subscribe to SSE events
-	useMultiServerSSE({
-		onEvent: (event: GlobalEvent) => {
-			if (!stateRef.current) return
+		// Handle message events
+		if (type === "message.created") {
+			const message = properties as Message
 
-			// Filter by directory if specified
-			if (options.directory && event.directory !== options.directory) {
-				return
-			}
+			// Only process messages from registered subagents
+			subagents.getSessions(stateRef.current).then((sessions) => {
+				if (!sessions[message.sessionID]) {
+					return // Ignore unregistered sessions
+				}
 
-			const { type, properties } = event.payload
+				// Track message-to-session mapping
+				messageToSessionMap.current.set(message.id, message.sessionID)
+				void subagents.addMessage(stateRef.current!, message.sessionID, message)
 
-			// Handle message events
-			if (type === "message.created") {
-				const message = properties as Message
+				// Flush any pending parts for this message
+				flushPendingParts(message.id, message.sessionID)
+			})
+		} else if (type === "message.updated") {
+			const message = properties as Message
 
-				// Only process messages from registered subagents
-				subagents.getSessions(stateRef.current).then((sessions) => {
-					if (!sessions[message.sessionID]) {
-						return // Ignore unregistered sessions
-					}
+			// Only process messages from registered subagents
+			subagents.getSessions(stateRef.current).then((sessions) => {
+				if (!sessions[message.sessionID]) {
+					return // Ignore unregistered sessions
+				}
 
-					// Track message-to-session mapping
-					messageToSessionMap.current.set(message.id, message.sessionID)
-					void subagents.addMessage(stateRef.current!, message.sessionID, message)
+				// Update mapping if needed
+				messageToSessionMap.current.set(message.id, message.sessionID)
+				void subagents.updateMessage(stateRef.current!, message.sessionID, message)
+			})
+		}
+		// Handle part events (note: event types are "message.part.created", not "part.created")
+		else if (type === "message.part.created") {
+			handlePartEvent(properties as Part, false)
+		} else if (type === "message.part.updated") {
+			handlePartEvent(properties as Part, true)
+		}
+	}, []) // Empty deps - uses refs for all values
 
-					// Flush any pending parts for this message
-					flushPendingParts(message.id, message.sessionID)
-				})
-			} else if (type === "message.updated") {
-				const message = properties as Message
-
-				// Only process messages from registered subagents
-				subagents.getSessions(stateRef.current).then((sessions) => {
-					if (!sessions[message.sessionID]) {
-						return // Ignore unregistered sessions
-					}
-
-					// Update mapping if needed
-					messageToSessionMap.current.set(message.id, message.sessionID)
-					void subagents.updateMessage(stateRef.current!, message.sessionID, message)
-				})
-			}
-			// Handle part events (note: event types are "message.part.created", not "part.created")
-			else if (type === "message.part.created") {
-				handlePartEvent(properties as Part, false)
-			} else if (type === "message.part.updated") {
-				handlePartEvent(properties as Part, true)
-			}
-		},
-	})
+	// Subscribe to SSE events with stable handler
+	useMultiServerSSE({ onEvent: handleEvent })
 }

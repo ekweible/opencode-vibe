@@ -8,8 +8,9 @@
  * Architecture:
  * - Polls /api/opencode-servers to discover running servers
  * - Maintains SSE connections to each discovered server
- * - Reconnects automatically on disconnect
+ * - Reconnects automatically on disconnect with exponential backoff
  * - Cleans up connections when servers die
+ * - Monitors connection health (force reconnect if no events for 60s)
  *
  * @example
  * ```tsx
@@ -27,6 +28,34 @@
  */
 
 import { EventSourceParserStream } from "eventsource-parser/stream"
+
+/**
+ * Backoff configuration for reconnection attempts
+ */
+export const BASE_BACKOFF_MS = 1000 // 1 second
+export const MAX_BACKOFF_MS = 30000 // 30 seconds
+const JITTER_FACTOR = 0.2 // Add up to 20% jitter
+
+/**
+ * Health monitoring configuration
+ */
+export const HEALTH_TIMEOUT_MS = 60000 // 60 seconds without events triggers reconnect
+const HEALTH_CHECK_INTERVAL_MS = 10000 // Check health every 10 seconds
+
+/**
+ * Connection states for observability
+ */
+export type ConnectionState = "connected" | "connecting" | "disconnected"
+
+/**
+ * Calculate exponential backoff with jitter
+ * Formula: min(baseDelay * 2^attempt, maxDelay) + random jitter (0-20%)
+ */
+export function calculateBackoff(attempt: number): number {
+	const baseDelay = Math.min(BASE_BACKOFF_MS * Math.pow(2, attempt), MAX_BACKOFF_MS)
+	const jitter = baseDelay * Math.random() * JITTER_FACTOR
+	return baseDelay + jitter
+}
 
 interface DiscoveredServer {
 	port: number
@@ -57,6 +86,7 @@ export class MultiServerSSE {
 	private statusCallbacks: StatusCallback[] = []
 	private eventCallbacks: EventCallback[] = []
 	private discoveryInterval?: ReturnType<typeof setInterval>
+	private healthCheckInterval?: ReturnType<typeof setInterval>
 	private started = false
 	private paused = false
 	private visibilityHandler?: () => void
@@ -66,6 +96,15 @@ export class MultiServerSSE {
 
 	// Session -> Port cache (tracks which server sent events for which session)
 	private sessionToPort = new Map<string, number>()
+
+	// Connection state tracking for observability
+	private connectionStates = new Map<number, ConnectionState>()
+
+	// Last event time per connection for health monitoring
+	private lastEventTimes = new Map<number, number>()
+
+	// Backoff attempt counters per connection
+	private backoffAttempts = new Map<number, number>()
 
 	constructor(private discoveryIntervalMs = 5000) {} // 5s - need fast discovery for good UX
 
@@ -108,11 +147,37 @@ export class MultiServerSSE {
 	}
 
 	/**
+	 * Check if any connections are established and healthy
+	 */
+	isConnected(): boolean {
+		for (const state of this.connectionStates.values()) {
+			if (state === "connected") return true
+		}
+		return false
+	}
+
+	/**
+	 * Get detailed connection status for all servers
+	 */
+	getConnectionStatus(): Map<number, ConnectionState> {
+		return new Map(this.connectionStates)
+	}
+
+	/**
+	 * Get last event time per connection for health monitoring
+	 */
+	getConnectionHealth(): Map<number, number> {
+		return new Map(this.lastEventTimes)
+	}
+
+	/**
 	 * Start discovering servers and subscribing to their events
 	 */
 	start() {
 		if (this.started) return
 		this.started = true
+
+		console.debug("[MultiServerSSE] Starting server discovery and SSE connections")
 
 		// Discover immediately on start
 		this.discover()
@@ -120,12 +185,18 @@ export class MultiServerSSE {
 			if (!this.paused) this.discover()
 		}, this.discoveryIntervalMs)
 
+		// Start health monitoring
+		this.healthCheckInterval = setInterval(() => {
+			if (!this.paused) this.checkConnectionHealth()
+		}, HEALTH_CHECK_INTERVAL_MS)
+
 		// Pause polling when tab is hidden, resume when visible
 		if (typeof document !== "undefined") {
 			this.visibilityHandler = () => {
 				this.paused = document.hidden
 				// Discover immediately when tab becomes visible again
 				if (!document.hidden && this.started) {
+					console.debug("[MultiServerSSE] Tab visible, resuming discovery")
 					this.discover()
 				}
 			}
@@ -137,6 +208,7 @@ export class MultiServerSSE {
 	 * Stop all connections and discovery
 	 */
 	stop() {
+		console.debug("[MultiServerSSE] Stopping all connections")
 		this.started = false
 
 		if (this.discoveryInterval) {
@@ -144,15 +216,71 @@ export class MultiServerSSE {
 			this.discoveryInterval = undefined
 		}
 
+		if (this.healthCheckInterval) {
+			clearInterval(this.healthCheckInterval)
+			this.healthCheckInterval = undefined
+		}
+
 		if (this.visibilityHandler && typeof document !== "undefined") {
 			document.removeEventListener("visibilitychange", this.visibilityHandler)
 			this.visibilityHandler = undefined
 		}
 
-		for (const [, controller] of this.connections) {
+		for (const [port, controller] of this.connections) {
+			this.setConnectionState(port, "disconnected")
 			controller.abort()
 		}
 		this.connections.clear()
+		this.connectionStates.clear()
+		this.lastEventTimes.clear()
+		this.backoffAttempts.clear()
+	}
+
+	/**
+	 * Check connection health and force reconnect for stale connections
+	 */
+	private checkConnectionHealth() {
+		const now = Date.now()
+
+		for (const [port, lastEventTime] of this.lastEventTimes) {
+			const timeSinceLastEvent = now - lastEventTime
+
+			if (timeSinceLastEvent > HEALTH_TIMEOUT_MS) {
+				console.debug(
+					`[MultiServerSSE] Connection to port ${port} unhealthy (no events for ${Math.round(timeSinceLastEvent / 1000)}s), forcing reconnect`,
+				)
+
+				// Abort the current connection - the reconnect loop will restart
+				const controller = this.connections.get(port)
+				if (controller) {
+					this.setConnectionState(port, "disconnected")
+					controller.abort()
+					this.connections.delete(port)
+					// Reset backoff for health-triggered reconnect
+					this.backoffAttempts.set(port, 0)
+					// Reconnect immediately
+					this.connectToServer(port)
+				}
+			}
+		}
+	}
+
+	/**
+	 * Update connection state and log the change
+	 */
+	private setConnectionState(port: number, state: ConnectionState) {
+		const previousState = this.connectionStates.get(port)
+		if (previousState !== state) {
+			this.connectionStates.set(port, state)
+			console.debug(`[MultiServerSSE] Port ${port}: ${previousState ?? "none"} → ${state}`)
+		}
+	}
+
+	/**
+	 * Record that we received an event from a connection (for health monitoring)
+	 */
+	private recordEventReceived(port: number) {
+		this.lastEventTimes.set(port, Date.now())
 	}
 
 	/**
@@ -245,6 +373,12 @@ export class MultiServerSSE {
 	private async connectToServer(port: number) {
 		const controller = new AbortController()
 		this.connections.set(port, controller)
+		this.setConnectionState(port, "connecting")
+
+		// Initialize backoff counter if not present
+		if (!this.backoffAttempts.has(port)) {
+			this.backoffAttempts.set(port, 0)
+		}
 
 		while (!controller.signal.aborted && this.started) {
 			try {
@@ -260,6 +394,11 @@ export class MultiServerSSE {
 					throw new Error(`Failed to connect: ${response.status}`)
 				}
 
+				// Connection successful - reset backoff and update state
+				this.backoffAttempts.set(port, 0)
+				this.setConnectionState(port, "connected")
+				this.recordEventReceived(port) // Mark connection time as last activity
+
 				// Use EventSourceParserStream for proper SSE parsing
 				const stream = response.body
 					.pipeThrough(new TextDecoderStream())
@@ -271,22 +410,53 @@ export class MultiServerSSE {
 					const { done, value } = await reader.read()
 					if (done) break
 
+					// Record activity for health monitoring
+					this.recordEventReceived(port)
+
 					try {
 						// EventSourceParserStream returns ParsedEvent with data property
 						const event = JSON.parse((value as { data: string }).data)
+
+						// Log heartbeats at debug level
+						if (event.payload?.type === "heartbeat") {
+							console.debug(`[MultiServerSSE] Heartbeat received from port ${port}`)
+						}
+
 						this.handleEvent(port, event)
 					} catch {
 						// Parse error - skip malformed event
 					}
 				}
-			} catch {
+			} catch (error) {
 				if (controller.signal.aborted) break
-				// Wait before reconnecting
-				await new Promise((r) => setTimeout(r, 2000))
+
+				// Update state and calculate backoff
+				this.setConnectionState(port, "disconnected")
+				const attempt = this.backoffAttempts.get(port) ?? 0
+				const delay = calculateBackoff(attempt)
+
+				console.debug(
+					`[MultiServerSSE] Connection to port ${port} failed (attempt ${attempt + 1}), retrying in ${Math.round(delay)}ms`,
+				)
+
+				// Increment attempt counter for next retry
+				this.backoffAttempts.set(port, attempt + 1)
+
+				// Wait before reconnecting with exponential backoff
+				await new Promise((r) => setTimeout(r, delay))
+
+				// Update state for retry
+				if (!controller.signal.aborted && this.started) {
+					this.setConnectionState(port, "connecting")
+				}
 			}
 		}
 
+		// Clean up on exit
 		this.connections.delete(port)
+		this.connectionStates.delete(port)
+		this.lastEventTimes.delete(port)
+		this.backoffAttempts.delete(port)
 	}
 
 	private handleEvent(

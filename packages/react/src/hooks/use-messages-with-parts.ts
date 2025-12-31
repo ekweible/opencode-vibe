@@ -1,16 +1,16 @@
 /**
- * useMessagesWithParts - Composition hook combining messages and parts
+ * useMessagesWithParts - Store selector combining messages and parts
  *
- * Combines useMessages and useParts hooks to provide a unified view
- * of messages with their associated parts.
+ * Selects messages from store and joins them with their parts.
+ * Returns messages with associated parts in a single data structure.
+ *
+ * Uses useMemo to avoid creating new object references on every render,
+ * which would cause infinite loops with useSyncExternalStore.
  *
  * @example
  * ```tsx
  * function SessionView({ sessionId }: { sessionId: string }) {
- *   const { messages, loading, error } = useMessagesWithParts({ sessionId })
- *
- *   if (loading) return <div>Loading...</div>
- *   if (error) return <div>Error: {error.message}</div>
+ *   const messages = useMessagesWithParts(sessionId)
  *
  *   return (
  *     <div>
@@ -29,20 +29,9 @@
 "use client"
 
 import { useMemo } from "react"
-import { useMessages } from "./use-messages"
-import { useParts } from "./use-parts"
 import type { Message, Part } from "@opencode-vibe/core/types"
-
-export interface UseMessagesWithPartsOptions {
-	/** Session ID to fetch messages for */
-	sessionId: string
-	/** Project directory (optional) */
-	directory?: string
-	/** Initial messages from server (hydration) - skips initial fetch if provided */
-	initialMessages?: Message[]
-	/** Initial parts from server (hydration) - skips initial fetch if provided */
-	initialParts?: Part[]
-}
+import { useOpencodeStore } from "../store"
+import { useOpencode } from "../providers"
 
 export interface OpencodeMessage {
 	/** Message metadata */
@@ -51,71 +40,30 @@ export interface OpencodeMessage {
 	parts: Part[]
 }
 
-export interface UseMessagesWithPartsReturn {
-	/** Array of messages with their parts */
-	messages: OpencodeMessage[]
-	/** Loading state - true if either messages or parts are loading */
-	loading: boolean
-	/** Error from either hook - messages error takes precedence */
-	error: Error | null
-	/** Refetch both messages and parts */
-	refetch: () => Promise<void>
-}
+const EMPTY_MESSAGES: OpencodeMessage[] = []
+const EMPTY_PARTS: Part[] = []
 
 /**
- * Hook to fetch messages with their associated parts
+ * Hook to get messages with their associated parts from store
  *
- * @param options - Options with sessionId and optional directory
- * @returns Object with messages (with parts), loading, error, and refetch
+ * @param sessionId - Session ID to fetch messages for
+ * @returns Array of messages with parts (empty array if none)
  */
-export function useMessagesWithParts(
-	options: UseMessagesWithPartsOptions,
-): UseMessagesWithPartsReturn {
-	const {
-		messages: messageList,
-		loading: messagesLoading,
-		error: messagesError,
-		refetch: refetchMessages,
-	} = useMessages({
-		sessionId: options.sessionId,
-		directory: options.directory,
-		initialData: options.initialMessages,
-	})
+export function useMessagesWithParts(sessionId: string): OpencodeMessage[] {
+	const { directory } = useOpencode()
 
-	const {
-		parts: partList,
-		loading: partsLoading,
-		error: partsError,
-		refetch: refetchParts,
-	} = useParts({
-		sessionId: options.sessionId,
-		directory: options.directory,
-		initialData: options.initialParts,
-	})
+	// Select raw data from store - these are stable references from Immer
+	const messages = useOpencodeStore((state) => state.directories[directory]?.messages[sessionId])
+	const partsMap = useOpencodeStore((state) => state.directories[directory]?.parts)
 
-	// Combine messages with their parts
-	const messages = useMemo(() => {
-		return messageList.map((message) => ({
+	// Derive the combined structure with useMemo to avoid infinite loops
+	// Only recomputes when messages or partsMap references change
+	return useMemo(() => {
+		if (!messages) return EMPTY_MESSAGES
+
+		return messages.map((message) => ({
 			info: message,
-			parts: partList.filter((part) => part.messageID === message.id),
+			parts: partsMap?.[message.id] ?? EMPTY_PARTS,
 		}))
-	}, [messageList, partList])
-
-	// Loading if either hook is loading
-	const loading = messagesLoading || partsLoading
-
-	// Error from either hook - messages error takes precedence
-	const error = messagesError || partsError
-
-	// Combined refetch
-	const refetch = async () => {
-		await Promise.all([refetchMessages(), refetchParts()])
-	}
-
-	return {
-		messages,
-		loading,
-		error,
-		refetch,
-	}
+	}, [messages, partsMap])
 }

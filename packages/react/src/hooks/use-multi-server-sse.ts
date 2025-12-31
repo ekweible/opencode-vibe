@@ -46,18 +46,20 @@ export interface UseMultiServerSSEOptions {
  * @param options - Options with optional onEvent callback
  */
 export function useMultiServerSSE(options?: UseMultiServerSSEOptions): void {
+	// Extract callback to avoid object reference issues
+	const onEvent = options?.onEvent
+
 	// Start MultiServerSSE singleton - idempotent, safe to call multiple times
 	useEffect(() => {
 		multiServerSSE.start()
-		// No cleanup needed - singleton manages its own lifecycle
-		// and may be shared across multiple hook instances
 	}, [])
 
 	// Subscribe to events if callback provided
+	// Use the extracted callback reference for stable dependency
 	useEffect(() => {
-		if (!options?.onEvent) return
+		if (!onEvent) return
 
-		const unsubscribe = multiServerSSE.onEvent(options.onEvent)
+		const unsubscribe = multiServerSSE.onEvent(onEvent)
 		return unsubscribe
-	}, [options?.onEvent])
+	}, [onEvent])
 }

@@ -4,4 +4,15 @@
  * Server-Sent Events (SSE) streaming for real-time updates
  */
 
-export { MultiServerSSE, multiServerSSE } from "./multi-server-sse.js"
+export {
+	MultiServerSSE,
+	multiServerSSE,
+	// Backoff constants
+	BASE_BACKOFF_MS,
+	MAX_BACKOFF_MS,
+	HEALTH_TIMEOUT_MS,
+	// Utility functions
+	calculateBackoff,
+	// Types
+	type ConnectionState,
+} from "./multi-server-sse.js"
