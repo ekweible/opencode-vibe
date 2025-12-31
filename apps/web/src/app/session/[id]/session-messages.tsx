@@ -1,8 +1,9 @@
 "use client"
 
-import { Fragment, useMemo, memo } from "react"
+import { Fragment, useMemo, memo, useEffect } from "react"
 import type { UIMessage, ChatStatus } from "ai"
-import { useMessagesWithParts, useSessionStatus } from "@opencode-vibe/react"
+import { useMessagesWithParts, useSessionStatus } from "@/app/hooks"
+import { useOpencodeStore } from "@opencode-vibe/react/store"
 import type { Message as CoreMessage, Part } from "@opencode-vibe/core/types"
 import {
 	transformMessages,
@@ -265,10 +266,16 @@ export function SessionMessages({
 	initialStoreParts,
 	status: externalStatus,
 }: SessionMessagesProps) {
-	// Flatten initialStoreParts from Record<messageId, Part[]> to Part[]
-	const initialPartsFlat = useMemo(() => {
-		return Object.values(initialStoreParts).flat() as Part[]
-	}, [initialStoreParts])
+	// Hydrate store with initial server data (runs once on mount)
+	useEffect(() => {
+		if (!directory) return
+		if (initialStoreMessages.length === 0) return
+
+		// Hydrate messages and parts into store
+		useOpencodeStore
+			.getState()
+			.hydrateMessages(directory, sessionId, initialStoreMessages, initialStoreParts)
+	}, [directory, sessionId, initialStoreMessages, initialStoreParts])
 
 	// Get messages with parts from store
 	const storeMessages = useMessagesWithParts(sessionId)

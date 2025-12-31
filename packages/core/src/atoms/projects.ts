@@ -48,9 +48,10 @@ export const ProjectAtom = {
 	 */
 	list: (): Effect.Effect<Project[], Error> =>
 		Effect.gen(function* () {
-			const client = createClient()
+			const client = yield* Effect.sync(() => createClient())
+
 			const result = yield* Effect.tryPromise({
-				try: () => client.project.list(),
+				try: (_signal) => client.project.list(),
 				catch: (e) => new Error(`Failed to fetch projects: ${e}`),
 			})
 
@@ -73,9 +74,10 @@ export const ProjectAtom = {
 	 */
 	current: (): Effect.Effect<Project | null, Error> =>
 		Effect.gen(function* () {
-			const client = createClient()
+			const client = yield* Effect.sync(() => createClient())
+
 			const result = yield* Effect.tryPromise({
-				try: () => client.project.current(),
+				try: (_signal) => client.project.current(),
 				catch: (e) => new Error(`Failed to fetch current project: ${e}`),
 			})
 

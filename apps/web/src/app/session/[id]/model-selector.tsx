@@ -8,7 +8,7 @@ import {
 	PromptInputSelectValue,
 } from "@/components/ai-elements/prompt-input"
 import { useProviders } from "@/app/hooks"
-import type { Provider, Model } from "@opencode-vibe/react"
+import type { Provider, Model } from "@/app/hooks"
 import { BotIcon } from "lucide-react"
 
 export interface ModelSelection {

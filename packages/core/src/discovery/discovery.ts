@@ -1,7 +1,7 @@
 /**
  * ServerDiscovery Effect Service
  *
- * Discovers running OpenCode servers via /api/opencode-servers endpoint.
+ * Discovers running OpenCode servers via /api/opencode/servers endpoint.
  * Returns gracefully degraded results on failure (empty array).
  *
  * @module discovery
@@ -72,7 +72,7 @@ function makeServerDiscovery(fetchFn: typeof fetch = fetch): ServerDiscoveryServ
 			Effect.gen(function* () {
 				// Fetch from API endpoint
 				const response = yield* Effect.tryPromise({
-					try: () => fetchFn("/api/opencode-servers"),
+					try: () => fetchFn("/api/opencode/servers"),
 					catch: () => new Error("Failed to fetch servers"),
 				})
 

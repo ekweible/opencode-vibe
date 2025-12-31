@@ -1,45 +1,38 @@
 "use client"
 
 /**
- * Client-side providers for the app
+ * DEPRECATED: OpenCode-specific providers moved to layout.tsx via OpencodeSSRPlugin
  *
- * Wraps the app with necessary context providers:
- * - ThemeProvider: SSR-safe theme switching (next-themes)
- * - SSEProvider: Real-time event subscriptions
- * - Toaster: Toast notifications (sonner)
+ * This file now only exists for backward compatibility.
+ * The app uses OpencodeSSRPlugin + factory hooks instead of context providers.
+ *
+ * Migration path:
+ * - Old: <Providers><App /></Providers>
+ * - New: <OpencodeSSRPlugin config={{...}} /> in layout.tsx + factory hooks from @/app/hooks
+ *
+ * See: docs/adr/013-unified-same-origin-architecture.md
  */
 
 import type { ReactNode } from "react"
-import { ThemeProvider } from "next-themes"
-import { Toaster } from "sonner"
-import { SSEProvider } from "@opencode-vibe/react"
-import { OPENCODE_URL } from "@/lib/client"
+import { useEffect } from "react"
 
 interface ProvidersProps {
 	children: ReactNode
 }
 
 /**
- * App providers wrapper
+ * Deprecated providers wrapper
  *
- * Must be a client component to use context providers.
+ * @deprecated Use OpencodeSSRPlugin in layout.tsx instead
  */
 export function Providers({ children }: ProvidersProps) {
-	return (
-		<ThemeProvider attribute="class" defaultTheme="system" enableSystem>
-			<SSEProvider url={OPENCODE_URL}>
-				{children}
-				<Toaster
-					position="top-right"
-					richColors
-					closeButton
-					toastOptions={{
-						classNames: {
-							toast: "font-sans",
-						},
-					}}
-				/>
-			</SSEProvider>
-		</ThemeProvider>
-	)
+	useEffect(() => {
+		console.warn(
+			"[OpenCode] Providers component is deprecated and will be removed in v2.0.0.\n" +
+				"The app now uses OpencodeSSRPlugin + factory hooks pattern.\n" +
+				"See docs/adr/013-unified-same-origin-architecture.md for migration guide.",
+		)
+	}, [])
+
+	return <>{children}</>
 }

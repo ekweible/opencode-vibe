@@ -117,7 +117,7 @@ describe("ServerDiscovery", () => {
 		const testLayer = makeTestLayer(mockFetch as any)
 		await Effect.runPromise(program.pipe(Effect.provide(testLayer)))
 
-		expect(calledUrl).toBe("/api/opencode-servers")
+		expect(calledUrl).toBe("/api/opencode/servers")
 	})
 
 	test("discover() filters out servers with invalid data", async () => {

@@ -76,8 +76,10 @@ export const ProviderAtom = {
 	 */
 	list: (): Effect.Effect<Provider[], Error> =>
 		Effect.gen(function* () {
+			const client = yield* Effect.sync(() => globalClient)
+
 			const result = yield* Effect.tryPromise({
-				try: () => globalClient.provider.list(),
+				try: (_signal) => client.provider.list(),
 				catch: (e) => new Error(`Failed to fetch providers: ${e}`),
 			})
 

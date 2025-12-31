@@ -7,24 +7,30 @@
  * Uses Effect-based discovery hooks from @opencode-vibe/react.
  */
 
-import { useServersEffect } from "@opencode-vibe/react" // Effect-based hook - stays in package
+import { OpencodeSSRPlugin } from "@opencode-vibe/react"
+import { useServersEffect } from "@/app/hooks"
 
 export function ServerStatus() {
 	const { servers, loading, error } = useServersEffect()
 
-	if (loading) {
-		return <div className="text-xs text-muted-foreground">Discovering servers...</div>
-	}
-
-	if (error) {
-		return (
-			<div className="text-xs text-destructive">Server discovery error (using localhost:4056)</div>
-		)
-	}
-
 	return (
-		<div className="text-xs text-muted-foreground">
-			{servers.length} server{servers.length !== 1 ? "s" : ""} available
-		</div>
+		<>
+			{/* Inject OpenCode config for factory hooks */}
+			<OpencodeSSRPlugin
+				config={{
+					baseUrl: "/api/opencode",
+					directory: "", // No specific directory for global operations
+				}}
+			/>
+			{loading ? (
+				<div className="text-xs text-muted-foreground">Discovering servers...</div>
+			) : error ? (
+				<div className="text-xs text-destructive">Server discovery error</div>
+			) : (
+				<div className="text-xs text-muted-foreground">
+					{servers.length} server{servers.length !== 1 ? "s" : ""} available
+				</div>
+			)}
+		</>
 	)
 }

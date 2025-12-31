@@ -51,10 +51,10 @@ export const SessionAtom = {
 	 */
 	list: (directory?: string): Effect.Effect<Session[], Error> =>
 		Effect.gen(function* () {
-			const client = createClient(directory)
+			const client = yield* Effect.sync(() => createClient(directory))
 
 			const response = yield* Effect.tryPromise({
-				try: () => client.session.list(),
+				try: (_signal) => client.session.list(),
 				catch: (error) =>
 					new Error(
 						`Failed to fetch sessions: ${error instanceof Error ? error.message : String(error)}`,
@@ -84,10 +84,10 @@ export const SessionAtom = {
 	get: (id: string, directory?: string): Effect.Effect<Session | null, Error> =>
 		Effect.gen(function* () {
 			// Pass sessionId for session-based routing (routes to correct server in multi-TUI setup)
-			const client = createClient(directory, id)
+			const client = yield* Effect.sync(() => createClient(directory, id))
 
 			const response = yield* Effect.tryPromise({
-				try: () => client.session.get({ path: { id } }),
+				try: (_signal) => client.session.get({ path: { id } }),
 				catch: (error) =>
 					new Error(
 						`Failed to fetch session: ${error instanceof Error ? error.message : String(error)}`,
@@ -112,10 +112,10 @@ export const SessionAtom = {
 	 */
 	create: (title?: string, directory?: string): Effect.Effect<Session, Error> =>
 		Effect.gen(function* () {
-			const client = createClient(directory)
+			const client = yield* Effect.sync(() => createClient(directory))
 
 			const response = yield* Effect.tryPromise({
-				try: () => client.session.create({ body: title ? { title } : {} }),
+				try: (_signal) => client.session.create({ body: title ? { title } : {} }),
 				catch: (error) =>
 					new Error(
 						`Failed to create session: ${error instanceof Error ? error.message : String(error)}`,
@@ -153,18 +153,20 @@ export const SessionAtom = {
 	): Effect.Effect<void, Error> =>
 		Effect.gen(function* () {
 			// Pass sessionId for session-based routing (routes to correct server in multi-TUI setup)
-			const client = createClient(directory, sessionId)
+			const client = yield* Effect.sync(() => createClient(directory, sessionId))
 
 			const body: { parts: any; model?: ModelSelection } = model
 				? { parts: parts as any, model }
 				: { parts: parts as any }
 
 			yield* Effect.tryPromise({
-				try: () =>
-					client.session.promptAsync({
+				try: async (_signal) => {
+					const result = await client.session.promptAsync({
 						path: { id: sessionId },
 						body,
-					}),
+					})
+					return result
+				},
 				catch: (error) =>
 					new Error(
 						`Failed to send prompt: ${error instanceof Error ? error.message : String(error)}`,
@@ -194,10 +196,10 @@ export const SessionAtom = {
 	): Effect.Effect<void, Error> =>
 		Effect.gen(function* () {
 			// Pass sessionId for session-based routing (routes to correct server in multi-TUI setup)
-			const client = createClient(directory, sessionId)
+			const client = yield* Effect.sync(() => createClient(directory, sessionId))
 
 			yield* Effect.tryPromise({
-				try: () =>
+				try: (_signal) =>
 					client.session.command({
 						path: { id: sessionId },
 						body: { command, arguments: args },

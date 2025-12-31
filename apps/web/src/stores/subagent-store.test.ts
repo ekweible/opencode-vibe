@@ -4,7 +4,7 @@
 
 import { describe, expect, test, beforeEach } from "vitest"
 import { useSubagentStore } from "./subagent-store"
-import type { Message, Part } from "@opencode-vibe/react"
+import type { Message, Part } from "@/app/hooks"
 
 describe("useSubagentStore", () => {
 	beforeEach(() => {

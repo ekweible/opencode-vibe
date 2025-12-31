@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeAll, afterEach } from "vitest"
 import { Window } from "happy-dom"
 import { render, cleanup } from "@testing-library/react"
-import type { Part } from "@opencode-vibe/react"
+import type { Part } from "@/app/hooks"
 import { PartRenderer } from "./part-renderer"
 
 // Set up DOM for React component tests

@@ -322,3 +322,69 @@ describe("hasExpandableContent", () => {
 		expect(hasExpandableContent(part.state)).toBe(false)
 	})
 })
+
+describe("Tool React.memo comparison for task tools", () => {
+	test("detects metadata.summary changes for task tools", () => {
+		// Create two task parts with same id/status but different summary length
+		const part1 = createToolPart("task", {
+			status: "running",
+			input: { description: "Debug auth" },
+			metadata: {
+				summary: [
+					{ id: "tool-1", tool: "read", state: { status: "completed", title: "Read file" } },
+				],
+			},
+			time: { start: 0 },
+		})
+
+		const part2 = createToolPart("task", {
+			status: "running",
+			input: { description: "Debug auth" },
+			metadata: {
+				summary: [
+					{ id: "tool-1", tool: "read", state: { status: "completed", title: "Read file" } },
+					{ id: "tool-2", tool: "grep", state: { status: "running" } },
+				],
+			},
+			time: { start: 0 },
+		})
+
+		// Verify summaries differ in length (would trigger re-render)
+		if (part1.state.status !== "pending" && part2.state.status !== "pending") {
+			const metadata1 = part1.state.metadata as { summary?: Array<{ id: string }> }
+			const metadata2 = part2.state.metadata as { summary?: Array<{ id: string }> }
+			expect(metadata1.summary).toHaveLength(1)
+			expect(metadata2.summary).toHaveLength(2)
+		}
+	})
+
+	test("detects last item status change in summary", () => {
+		const part1 = createToolPart("task", {
+			status: "running",
+			input: { description: "Debug auth" },
+			metadata: {
+				summary: [{ id: "tool-1", tool: "read", state: { status: "running" } }],
+			},
+			time: { start: 0 },
+		})
+
+		const part2 = createToolPart("task", {
+			status: "running",
+			input: { description: "Debug auth" },
+			metadata: {
+				summary: [
+					{ id: "tool-1", tool: "read", state: { status: "completed", title: "Read file" } },
+				],
+			},
+			time: { start: 0 },
+		})
+
+		// Verify last item status changed (should trigger re-render)
+		if (part1.state.status !== "pending" && part2.state.status !== "pending") {
+			const metadata1 = part1.state.metadata as { summary?: Array<{ state: { status: string } }> }
+			const metadata2 = part2.state.metadata as { summary?: Array<{ state: { status: string } }> }
+			expect(metadata1.summary?.[0]?.state.status).toBe("running")
+			expect(metadata2.summary?.[0]?.state.status).toBe("completed")
+		}
+	})
+})

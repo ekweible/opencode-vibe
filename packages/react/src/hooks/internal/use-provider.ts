@@ -114,7 +114,9 @@ export function useProvider(): UseProviderResult {
 			setLoading(true)
 			setError(null)
 
-			const response = await globalClient.provider.list()
+			// globalClient is Promise<OpencodeClient>, await it first
+			const client = await globalClient
+			const response = await client.provider.list()
 
 			// SDK wraps response in { data: ... }
 			// API returns { all, connected, default } but we normalize to "defaults"

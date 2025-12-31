@@ -11,9 +11,15 @@ import { NextRequest, NextResponse } from "next/server"
  * - Next.js: Proxy to http://127.0.0.1:4056/session/list [server-to-server]
  * - Response: Return to browser [same-origin]
  *
+ * Route Priority:
+ * Next.js 16 prioritizes static routes (/api/opencode/servers) over dynamic routes ([port])
+ * automatically. No explicit reserved segment checking needed - requests to /api/opencode/servers
+ * will match the static route first. This catch-all only handles numeric port patterns.
+ *
  * Related:
  * - SSE Proxy: /api/sse/[port]/route.ts (handles SSE streams)
  * - ADR-013: Unified Same-Origin Architecture
+ * - Static route: /api/opencode/servers/route.ts (server discovery)
  *
  * @example
  * // Client makes same-origin request
@@ -33,13 +39,25 @@ type RouteContext = {
 }
 
 /**
+ * Reserved segments that should not be treated as port numbers
+ * These have their own static route handlers (e.g., /api/opencode/servers/route.ts)
+ */
+const RESERVED_SEGMENTS = new Set(["servers"])
+
+/**
  * Validate port number for security
  * - Must be numeric
  * - Must be in range 1024-65535 (user ports)
+ * - Must not be a reserved route segment
  */
 function validatePort(
 	port: string,
-): { valid: true; port: number } | { valid: false; error: string } {
+): { valid: true; port: number } | { valid: false; error: string; reserved?: boolean } {
+	// Check if this is a reserved route segment
+	if (RESERVED_SEGMENTS.has(port)) {
+		return { valid: false, error: "Reserved route segment", reserved: true }
+	}
+
 	if (!port || !/^\d+$/.test(port)) {
 		return { valid: false, error: "Invalid port number" }
 	}
@@ -154,7 +172,11 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
 	const validation = validatePort(port)
 	if (!validation.valid) {
-		return NextResponse.json({ error: validation.error }, { status: 400 })
+		// If this is a reserved segment, return 404 so Next.js can try other routes
+		// This shouldn't happen in production (static routes should match first)
+		// but provides a fallback during development
+		const status = validation.reserved ? 404 : 400
+		return NextResponse.json({ error: validation.error }, { status })
 	}
 
 	return proxyRequest(request, validation.port, path)
@@ -165,7 +187,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
 	const validation = validatePort(port)
 	if (!validation.valid) {
-		return NextResponse.json({ error: validation.error }, { status: 400 })
+		const status = validation.reserved ? 404 : 400
+		return NextResponse.json({ error: validation.error }, { status })
 	}
 
 	return proxyRequest(request, validation.port, path)
@@ -176,7 +199,8 @@ export async function PUT(request: NextRequest, context: RouteContext) {
 
 	const validation = validatePort(port)
 	if (!validation.valid) {
-		return NextResponse.json({ error: validation.error }, { status: 400 })
+		const status = validation.reserved ? 404 : 400
+		return NextResponse.json({ error: validation.error }, { status })
 	}
 
 	return proxyRequest(request, validation.port, path)
@@ -187,7 +211,8 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
 
 	const validation = validatePort(port)
 	if (!validation.valid) {
-		return NextResponse.json({ error: validation.error }, { status: 400 })
+		const status = validation.reserved ? 404 : 400
+		return NextResponse.json({ error: validation.error }, { status })
 	}
 
 	return proxyRequest(request, validation.port, path)
@@ -198,7 +223,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
 	const validation = validatePort(port)
 	if (!validation.valid) {
-		return NextResponse.json({ error: validation.error }, { status: 400 })
+		const status = validation.reserved ? 404 : 400
+		return NextResponse.json({ error: validation.error }, { status })
 	}
 
 	return proxyRequest(request, validation.port, path)
@@ -209,7 +235,8 @@ export async function OPTIONS(request: NextRequest, context: RouteContext) {
 
 	const validation = validatePort(port)
 	if (!validation.valid) {
-		return NextResponse.json({ error: validation.error }, { status: 400 })
+		const status = validation.reserved ? 404 : 400
+		return NextResponse.json({ error: validation.error }, { status })
 	}
 
 	return proxyRequest(request, validation.port, path)

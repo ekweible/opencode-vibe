@@ -15,6 +15,7 @@ export interface DiscoveredServer {
 	port: number
 	pid: number
 	directory: string
+	sessions?: string[] // Session IDs hosted by this server
 }
 
 interface CandidatePort {

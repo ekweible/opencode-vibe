@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation"
 import { Suspense } from "react"
-import { createClient } from "@/lib/client"
+import { createClientSSR } from "@opencode-vibe/core/client"
 import { transformMessages, type OpencodeMessage } from "@/lib/transform-messages"
 import type { Session } from "@opencode-ai/sdk/client"
 import { SessionLayout } from "./session-layout"
@@ -24,15 +24,20 @@ interface Props {
 
 /**
  * Fetch session data from the API (cached)
+ *
+ * IMPORTANT: Returns null for not found - caller must handle notFound()
+ * Do NOT call notFound() inside "use cache" functions - causes server/client mismatch
  */
 async function getSession(id: string, directory?: string): Promise<Session | null> {
 	"use cache"
 
 	try {
-		const client = createClient(directory)
+		const client = await createClientSSR(directory)
 		const result = await client.session.get({ path: { id } })
 		return result.data || null
-	} catch {
+	} catch (error) {
+		// Log error but return null - let caller decide how to handle
+		console.error(`[Session ${id}] Failed to fetch:`, error)
 		return null
 	}
 }
@@ -53,7 +58,7 @@ const INITIAL_MESSAGE_LIMIT = 50
  */
 async function getMessages(id: string, directory?: string) {
 	try {
-		const client = createClient(directory)
+		const client = await createClientSSR(directory)
 		const result = await client.session.messages({
 			path: { id },
 			query: { limit: INITIAL_MESSAGE_LIMIT },

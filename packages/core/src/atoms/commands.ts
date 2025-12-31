@@ -49,10 +49,10 @@ export const CommandAtom = {
 	list: (directory?: string): Effect.Effect<CustomCommand[], Error> =>
 		Effect.gen(function* () {
 			// Create client lazily (not at module load time)
-			const client = createClient(directory)
+			const client = yield* Effect.sync(() => createClient(directory))
 
 			const result = yield* Effect.tryPromise({
-				try: () => client.command.list(),
+				try: (_signal) => client.command.list(),
 				catch: (e) => new Error(`Failed to fetch commands: ${e}`),
 			})
 

@@ -83,7 +83,7 @@ describe("MultiServerSSE connection status", () => {
 
 		// Mock fetch to return a server
 		vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
-			if (url === "/api/opencode-servers") {
+			if (url === "/api/opencode/servers") {
 				return new Response(JSON.stringify([{ port: 3000, pid: 123, directory: "/test" }]))
 			}
 			// SSE connection - return a readable stream that stays open
@@ -108,7 +108,7 @@ describe("MultiServerSSE connection status", () => {
 		const sse = new MultiServerSSE()
 
 		vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
-			if (url === "/api/opencode-servers") {
+			if (url === "/api/opencode/servers") {
 				return new Response(JSON.stringify([{ port: 3000, pid: 123, directory: "/test" }]))
 			}
 			return new Response(new ReadableStream(), {
@@ -153,7 +153,7 @@ describe("MultiServerSSE health monitoring", () => {
 		})
 
 		vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
-			if (url === "/api/opencode-servers") {
+			if (url === "/api/opencode/servers") {
 				return new Response(JSON.stringify([{ port: 3000, pid: 123, directory: "/test" }]))
 			}
 			return new Response(mockStream, {
@@ -181,6 +181,199 @@ describe("MultiServerSSE health monitoring", () => {
 })
 
 /**
+ * API routing tests - ensure correct /api/opencode prefix for REST calls
+ */
+describe("MultiServerSSE API routing", () => {
+	it("should return /api/opencode prefix for session-based routing", () => {
+		const sse = new MultiServerSSE()
+
+		// Simulate discovery finding a server
+		const servers = [{ port: 53306, pid: 123, directory: "/test/project" }]
+		;(sse as any).directoryToPorts.set("/test/project", [53306])
+
+		// Simulate session ownership tracking
+		;(sse as any).sessionToPort.set("ses_123", 53306)
+
+		const url = sse.getBaseUrlForSession("ses_123", "/test/project")
+
+		// Should use /api/opencode for REST API calls, not /api/sse
+		expect(url).toBe("/api/opencode/53306")
+	})
+
+	it("should return /api/opencode prefix for directory-based routing", () => {
+		const sse = new MultiServerSSE()
+
+		// Simulate discovery finding a server
+		;(sse as any).directoryToPorts.set("/test/project", [53306])
+
+		const url = sse.getBaseUrlForDirectory("/test/project")
+
+		// Should use /api/opencode for REST API calls, not /api/sse
+		expect(url).toBe("/api/opencode/53306")
+	})
+
+	it("should return undefined when no server found for directory", () => {
+		const sse = new MultiServerSSE()
+
+		const url = sse.getBaseUrlForDirectory("/unknown/project")
+
+		expect(url).toBeUndefined()
+	})
+
+	it("should fallback to directory routing when session not in cache", () => {
+		const sse = new MultiServerSSE()
+
+		// Directory has a server, but session not tracked yet
+		;(sse as any).directoryToPorts.set("/test/project", [53306])
+
+		const url = sse.getBaseUrlForSession("ses_unknown", "/test/project")
+
+		// Should fallback to directory's server
+		expect(url).toBe("/api/opencode/53306")
+	})
+
+	it("should return undefined when session and directory both unknown", () => {
+		const sse = new MultiServerSSE()
+
+		const url = sse.getBaseUrlForSession("ses_unknown", "/unknown/project")
+
+		expect(url).toBeUndefined()
+	})
+})
+
+/**
+ * Session cache pre-population tests
+ */
+describe("MultiServerSSE session cache pre-population", () => {
+	beforeEach(() => {
+		vi.useFakeTimers()
+	})
+
+	afterEach(() => {
+		vi.useRealTimers()
+		vi.restoreAllMocks()
+	})
+
+	it("should pre-populate sessionToPort cache from discovery response", async () => {
+		const sse = new MultiServerSSE()
+
+		// Mock discovery response with sessions field
+		vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
+			if (url === "/api/opencode/servers") {
+				return new Response(
+					JSON.stringify([
+						{
+							port: 3000,
+							pid: 123,
+							directory: "/test",
+							sessions: ["ses_abc", "ses_def"],
+						},
+						{
+							port: 3001,
+							pid: 124,
+							directory: "/other",
+							sessions: ["ses_xyz"],
+						},
+					]),
+				)
+			}
+			// SSE connection
+			return new Response(new ReadableStream(), {
+				headers: { "Content-Type": "text/event-stream" },
+			})
+		})
+
+		sse.start()
+		await vi.advanceTimersByTimeAsync(100)
+
+		// Verify sessionToPort cache was populated
+		expect(sse.getPortForSession("ses_abc")).toBe(3000)
+		expect(sse.getPortForSession("ses_def")).toBe(3000)
+		expect(sse.getPortForSession("ses_xyz")).toBe(3001)
+
+		// Verify routing works
+		expect(sse.getBaseUrlForSession("ses_abc", "/test")).toBe("/api/opencode/3000")
+		expect(sse.getBaseUrlForSession("ses_xyz", "/other")).toBe("/api/opencode/3001")
+
+		sse.stop()
+	})
+
+	it("should handle discovery response without sessions field", async () => {
+		const sse = new MultiServerSSE()
+
+		// Mock discovery response without sessions (backward compatibility)
+		vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
+			if (url === "/api/opencode/servers") {
+				return new Response(
+					JSON.stringify([
+						{
+							port: 3000,
+							pid: 123,
+							directory: "/test",
+							// No sessions field
+						},
+					]),
+				)
+			}
+			return new Response(new ReadableStream(), {
+				headers: { "Content-Type": "text/event-stream" },
+			})
+		})
+
+		sse.start()
+		await vi.advanceTimersByTimeAsync(100)
+
+		// Should not crash, cache should be empty
+		expect(sse.getPortForSession("ses_unknown")).toBeUndefined()
+
+		// Should still fallback to directory routing
+		expect(sse.getBaseUrlForSession("ses_unknown", "/test")).toBe("/api/opencode/3000")
+
+		sse.stop()
+	})
+
+	it("should clean up cache entries for dead servers", async () => {
+		const sse = new MultiServerSSE()
+
+		// First discovery: two servers
+		let discoveryResponse = [
+			{ port: 3000, pid: 123, directory: "/test", sessions: ["ses_abc"] },
+			{ port: 3001, pid: 124, directory: "/other", sessions: ["ses_xyz"] },
+		]
+
+		vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
+			if (url === "/api/opencode/servers") {
+				return new Response(JSON.stringify(discoveryResponse))
+			}
+			return new Response(new ReadableStream(), {
+				headers: { "Content-Type": "text/event-stream" },
+			})
+		})
+
+		sse.start()
+		await vi.advanceTimersByTimeAsync(100)
+
+		// Verify both sessions are cached
+		expect(sse.getPortForSession("ses_abc")).toBe(3000)
+		expect(sse.getPortForSession("ses_xyz")).toBe(3001)
+
+		// Second discovery: port 3001 is dead
+		discoveryResponse = [{ port: 3000, pid: 123, directory: "/test", sessions: ["ses_abc"] }]
+
+		// Trigger next discovery interval (5s default)
+		await vi.advanceTimersByTimeAsync(5000)
+
+		// ses_abc should still be cached (server alive)
+		expect(sse.getPortForSession("ses_abc")).toBe(3000)
+
+		// ses_xyz should be cleaned up (server dead)
+		expect(sse.getPortForSession("ses_xyz")).toBeUndefined()
+
+		sse.stop()
+	})
+})
+
+/**
  * Exponential backoff behavior tests
  */
 describe("MultiServerSSE reconnection behavior", () => {
@@ -198,7 +391,7 @@ describe("MultiServerSSE reconnection behavior", () => {
 		let connectionAttempts = 0
 
 		vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
-			if (url === "/api/opencode-servers") {
+			if (url === "/api/opencode/servers") {
 				return new Response(JSON.stringify([{ port: 3000, pid: 123, directory: "/test" }]))
 			}
 			connectionAttempts++

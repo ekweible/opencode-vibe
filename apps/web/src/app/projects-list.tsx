@@ -8,12 +8,13 @@
  * Sessions auto-sort by last activity with smooth animations.
  */
 
-import { useEffect, useRef, useMemo, memo, useState, useCallback } from "react"
+import { useEffect, useRef, useMemo, memo, useState } from "react"
 import Link from "next/link"
 import { motion, AnimatePresence } from "framer-motion"
-import { useSSE, useLiveTime, useOpencode } from "@opencode-vibe/react"
-import { createClient } from "@/lib/client"
-import type { GlobalEvent } from "@opencode-ai/sdk/client"
+import { useLiveTime, useConnectionStatus } from "@/app/hooks"
+import { useOpencodeStore } from "@opencode-vibe/react/store"
+import { createClient } from "@opencode-vibe/core/client"
+import { SSEDebugPanel } from "@/components/sse-debug-panel"
 
 // Session status type (extracted from SSE event payload)
 type SessionStatusValue = "running" | "pending" | "completed" | "error"
@@ -217,15 +218,41 @@ function NewSessionButton({ directory }: { directory: string }) {
 }
 
 /**
- * SSE Connection indicator for debugging
+ * SSE Connection indicator with debug panel
+ * Shows green when connected, red when discovering, opens debug panel on click
  */
 function SSEStatus() {
-	const { connected } = useSSE({ url: "http://localhost:4056" })
+	const [debugPanelOpen, setDebugPanelOpen] = useState(false)
+
+	// Use the new useConnectionStatus hook from factory
+	// This polls multiServerSSE for actual connection state
+	const { connected, serverCount, discovering } = useConnectionStatus()
+
+	const getStatusColor = () => {
+		if (connected) return "bg-green-500"
+		if (discovering) return "bg-yellow-500"
+		return "bg-red-500"
+	}
+
+	const getStatusText = () => {
+		if (connected) return `connected (${serverCount})`
+		if (discovering) return "discovering..."
+		return "disconnected"
+	}
+
 	return (
-		<div className="fixed bottom-4 right-4 flex items-center gap-2 text-xs text-muted-foreground bg-card border border-border rounded-full px-3 py-1">
-			<span className={`w-2 h-2 rounded-full ${connected ? "bg-green-500" : "bg-red-500"}`} />
-			SSE {connected ? "connected" : "disconnected"}
-		</div>
+		<>
+			<button
+				type="button"
+				onClick={() => setDebugPanelOpen(true)}
+				className="fixed bottom-4 right-4 flex items-center gap-2 text-xs text-muted-foreground bg-card border border-border rounded-full px-3 py-1 hover:bg-secondary transition-colors cursor-pointer"
+			>
+				<span className={`w-2 h-2 rounded-full ${getStatusColor()}`} />
+				SSE {getStatusText()}
+			</button>
+
+			{debugPanelOpen && <SSEDebugPanel onClose={() => setDebugPanelOpen(false)} />}
+		</>
 	)
 }
 
@@ -286,7 +313,7 @@ function useSessionStatuses(projects: ProjectWithSessions[]) {
 			await Promise.all(
 				projects.map(async ({ project, sessions }) => {
 					try {
-						const client = createClient(project.worktree)
+						const client = await createClient(project.worktree)
 
 						// Only check recent sessions (updated in last 5 minutes) - likely active
 						const recentSessions = sessions.filter((s) => {
@@ -326,68 +353,70 @@ function useSessionStatuses(projects: ProjectWithSessions[]) {
 		bootstrap()
 	}, [projects])
 
-	// Subscribe to SSE events for real-time updates
-	const { events } = useSSE({ url: "http://localhost:4056" })
-
+	// Subscribe to session status changes from store
+	// The store is already synced via useSSESync in the provider
+	// We just need to react to status changes
 	useEffect(() => {
 		// Get unique directories for filtering
 		const directories = new Set(projects.map((p) => p.project.worktree))
 
-		// Process only the latest events (avoid reprocessing all on every event)
-		const latestEvents = events.slice(-10) // Last 10 events should be enough
+		// Subscribe to store updates for our directories
+		const unsubscribe = useOpencodeStore.subscribe((state) => {
+			for (const directory of directories) {
+				const dirState = state.directories[directory]
+				if (!dirState) continue
 
-		for (const event of latestEvents) {
-			// Only process events for our directories
-			if (!directories.has(event.directory)) continue
+				const sessionStatuses = dirState.sessionStatus
 
-			// Handle session.status events
-			if (event.payload.type === "session.status") {
-				const sessionID = event.payload.properties.sessionID
-				const statusType = event.payload.properties.status?.type
+				// Update session statuses from store
+				for (const [sessionId, status] of Object.entries(sessionStatuses)) {
+					const statusValue = status as SessionStatusValue
 
-				if (statusType === "busy") {
-					// Cancel any pending cooldown for this session
-					const existingTimer = cooldownTimersRef.current.get(sessionID)
-					if (existingTimer) {
-						clearTimeout(existingTimer)
-						cooldownTimersRef.current.delete(sessionID)
-					}
+					if (statusValue === "running") {
+						// Cancel any pending cooldown
+						const existingTimer = cooldownTimersRef.current.get(sessionId)
+						if (existingTimer) {
+							clearTimeout(existingTimer)
+							cooldownTimersRef.current.delete(sessionId)
+						}
 
-					setSessionStatuses((prev) => ({
-						...prev,
-						[sessionID]: "running",
-					}))
-					setLastActivity((prev) => ({
-						...prev,
-						[sessionID]: Date.now(),
-					}))
-				} else if (statusType === "idle") {
-					// Update last activity immediately
-					setLastActivity((prev) => ({
-						...prev,
-						[sessionID]: Date.now(),
-					}))
-
-					// Clear any existing timer and start fresh cooldown
-					const existingTimer = cooldownTimersRef.current.get(sessionID)
-					if (existingTimer) {
-						clearTimeout(existingTimer)
-					}
-
-					// Start cooldown timer - status changes to completed after delay
-					const timer = setTimeout(() => {
 						setSessionStatuses((prev) => ({
 							...prev,
-							[sessionID]: "completed",
+							[sessionId]: "running",
 						}))
-						cooldownTimersRef.current.delete(sessionID)
-					}, IDLE_COOLDOWN_MS)
+						setLastActivity((prev) => ({
+							...prev,
+							[sessionId]: Date.now(),
+						}))
+					} else if (statusValue === "completed") {
+						// Update last activity
+						setLastActivity((prev) => ({
+							...prev,
+							[sessionId]: Date.now(),
+						}))
 
-					cooldownTimersRef.current.set(sessionID, timer)
+						// Start cooldown
+						const existingTimer = cooldownTimersRef.current.get(sessionId)
+						if (existingTimer) {
+							clearTimeout(existingTimer)
+						}
+
+						const timer = setTimeout(() => {
+							setSessionStatuses((prev) => ({
+								...prev,
+								[sessionId]: "completed",
+							}))
+							cooldownTimersRef.current.delete(sessionId)
+						}, IDLE_COOLDOWN_MS)
+
+						cooldownTimersRef.current.set(sessionId, timer)
+					}
 				}
 			}
-		}
-	}, [events, projects])
+		})
+
+		return unsubscribe
+	}, [projects])
 
 	return { sessionStatuses, lastActivity }
 }

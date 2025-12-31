@@ -4,7 +4,8 @@ import { useState, createContext, useContext } from "react"
 import Link from "next/link"
 import type { UIMessage } from "ai"
 import { toast } from "sonner"
-import { OpencodeProvider, useSession } from "@opencode-vibe/react"
+import { OpencodeSSRPlugin } from "@opencode-vibe/react"
+import { useSession, useMessages, useSessionStatus, useSendMessage, useSSESync } from "@/app/hooks"
 import { NewSessionButton } from "./new-session-button"
 import { SessionMessages } from "./session-messages"
 import { PromptInput } from "@/components/prompt"
@@ -107,29 +108,34 @@ function SessionContent({
 	const [debugPanelOpen, setDebugPanelOpen] = useState(false)
 	const toggleDebugPanel = () => setDebugPanelOpen((prev) => !prev)
 
-	// Use the facade hook - replaces 6 old hooks with single call
-	const { data, messages, running, isLoading, error, sendMessage, queueLength } = useSession(
+	// Start SSE and wire events to store - CRITICAL for real-time updates
+	useSSESync()
+
+	// Use individual factory hooks
+	const sessionData = useSession(sessionId)
+	const messages = useMessages(sessionId)
+	const status = useSessionStatus(sessionId)
+	const running = status === "running"
+
+	const { sendMessage, isPending: isLoading } = useSendMessage({
 		sessionId,
-		{
-			directory,
-			onError: (err) => {
-				toast.error("Failed to send message", {
-					description: err.message || "An unknown error occurred",
-					duration: 5000,
-				})
-			},
-		},
-	)
+	})
 
 	// Fallback to initialSession for SSR hydration
-	const session = data ?? initialSession
+	const session = sessionData ?? initialSession
+
+	// Queue length (TODO: need to add this to factory if needed)
+	const queueLength = 0
 
 	// Handle prompt submission
 	const handleSubmit = async (parts: Prompt) => {
 		try {
 			await sendMessage(parts)
 		} catch (err) {
-			// Error is handled by onError callback
+			toast.error("Failed to send message", {
+				description: err instanceof Error ? err.message : "An unknown error occurred",
+				duration: 5000,
+			})
 			console.error("Failed to send message:", err)
 		}
 	}
@@ -240,7 +246,8 @@ function SessionContent({
 /**
  * Client component wrapper for session page
  *
- * Wraps content with OpencodeProvider to enable reactive hooks.
+ * Renders OpencodeSSRPlugin to inject config before React hydrates.
+ * No longer needs OpencodeProvider - factory hooks work without it.
  * Server-provided initial data is used as fallback until SSE updates arrive.
  */
 export function SessionLayout({
@@ -251,11 +258,17 @@ export function SessionLayout({
 	initialStoreMessages,
 	initialStoreParts,
 }: SessionLayoutProps) {
-	// Default URL to localhost:4056 (OpenCode server)
-	const url = process.env.NEXT_PUBLIC_OPENCODE_URL || "http://localhost:4056"
-
 	return (
-		<OpencodeProvider url={url} directory={directory || session.directory}>
+		<>
+			{/* Inject OpenCode config for factory hooks - must have directory from URL */}
+			{directory && (
+				<OpencodeSSRPlugin
+					config={{
+						baseUrl: "/api/opencode",
+						directory,
+					}}
+				/>
+			)}
 			<SessionContent
 				sessionId={sessionId}
 				directory={directory}
@@ -264,6 +277,6 @@ export function SessionLayout({
 				initialStoreParts={initialStoreParts}
 				initialSession={session}
 			/>
-		</OpencodeProvider>
+		</>
 	)
 }

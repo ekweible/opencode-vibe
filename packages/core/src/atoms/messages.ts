@@ -46,10 +46,10 @@ export const MessageAtom = {
 	list: (sessionId: string, directory?: string): Effect.Effect<Message[], Error> =>
 		Effect.gen(function* () {
 			// Pass sessionId for session-based routing (routes to correct server in multi-TUI setup)
-			const client = createClient(directory, sessionId)
+			const client = yield* Effect.sync(() => createClient(directory, sessionId))
 
 			const response = yield* Effect.tryPromise({
-				try: () =>
+				try: (_signal) =>
 					client.session.messages({
 						path: { id: sessionId },
 						query: { limit: 1000 }, // TODO: Pagination

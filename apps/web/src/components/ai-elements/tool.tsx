@@ -19,7 +19,7 @@ import { useState, isValidElement } from "react"
 import { CodeBlock } from "./code-block"
 import { SubagentCurrentActivity } from "./task"
 import { SubagentView } from "./subagent-view"
-import { useSubagent } from "@opencode-vibe/react"
+import { useSubagent } from "@/app/hooks"
 
 /**
  * Extract contextual information from tool inputs and state for display in 3-line card.
@@ -193,16 +193,55 @@ const ToolComponent = ({ className, toolPart, children, ...props }: ToolProps) =
  * - Same id = same tool invocation
  * - Status change = meaningful update (pending→running→completed)
  * - Input/output don't change for a given tool invocation
+ *
+ * EXCEPTION: Task tools need deep comparison of metadata.summary because
+ * sub-agent activity updates the summary array while status stays "running".
  */
 export const Tool = React.memo(ToolComponent, (prev, next) => {
 	// Compare toolPart if provided (OpenCode tools)
 	if (prev.toolPart && next.toolPart) {
-		// Same id + same status = no meaningful change
-		// Input/output are immutable for a given tool invocation
-		return (
-			prev.toolPart.id === next.toolPart.id &&
-			prev.toolPart.state.status === next.toolPart.state.status
-		)
+		// Fast path: Different IDs = different tools
+		if (prev.toolPart.id !== next.toolPart.id) return false
+
+		// Fast path: Different status = meaningful change
+		if (prev.toolPart.state.status !== next.toolPart.state.status) return false
+
+		// Task tools: Compare metadata.summary for sub-agent activity updates
+		if (prev.toolPart.tool === "task" && next.toolPart.tool === "task") {
+			// Skip pending states (no metadata yet)
+			if (prev.toolPart.state.status === "pending" || next.toolPart.state.status === "pending") {
+				return true
+			}
+
+			const prevMetadata = prev.toolPart.state.metadata as
+				| { summary?: Array<{ id: string; state: { status: string } }> }
+				| undefined
+			const nextMetadata = next.toolPart.state.metadata as
+				| { summary?: Array<{ id: string; state: { status: string } }> }
+				| undefined
+
+			const prevSummary = prevMetadata?.summary
+			const nextSummary = nextMetadata?.summary
+
+			// Both undefined/null - equal
+			if (!prevSummary && !nextSummary) return true
+
+			// One undefined, one defined - not equal
+			if (!prevSummary || !nextSummary) return false
+
+			// Different lengths - not equal
+			if (prevSummary.length !== nextSummary.length) return false
+
+			// Compare summary item count and last item status (common case)
+			// Full deep comparison is handled by SubagentCurrentActivity's memo
+			const prevLast = prevSummary[prevSummary.length - 1]
+			const nextLast = nextSummary[nextSummary.length - 1]
+
+			return prevLast?.id === nextLast?.id && prevLast?.state.status === nextLast?.state.status
+		}
+
+		// Non-task tools: id + status comparison is sufficient
+		return true
 	}
 
 	// One has toolPart, other doesn't - not equal

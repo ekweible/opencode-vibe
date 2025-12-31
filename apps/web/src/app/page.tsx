@@ -1,4 +1,4 @@
-import { createClient, globalClient } from "@/lib/client"
+import { createClientSSR, globalClientSSR } from "@opencode-vibe/core/client"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { OpenCodeLogo } from "@/components/opencode-logo"
 import { ProjectsList } from "./projects-list"
@@ -77,17 +77,20 @@ function isRealProject(project: Project): boolean {
 }
 
 /**
- * Fetch all projects with their sessions (cached server function)
- * Short cache life - data is fresh enough for dashboard display
+ * Fetch all projects with their sessions
+ *
+ * NOTE: No caching - needs live server discovery data.
+ * The discovery fetch in createClient() uses cache: "no-store" and would be
+ * aborted by Next.js if this function had "use cache".
  */
 async function getProjectsWithSessions(): Promise<ProjectWithSessions[]> {
-	"use cache"
-
-	const now = Date.now()
-
-	// 1. Get all projects
-	const projectsResponse = await globalClient.project.list()
+	// 1. Get all projects (globalClientSSR is Promise<OpencodeClient>)
+	const client = await globalClientSSR
+	const projectsResponse = await client.project.list()
 	const allProjects = (projectsResponse.data || []) as Project[]
+
+	// Date.now() must come AFTER uncached data access (Next.js 16 prerender requirement)
+	const now = Date.now()
 
 	// 2. Filter to real projects only
 	const realProjects = allProjects.filter(isRealProject)
@@ -96,7 +99,7 @@ async function getProjectsWithSessions(): Promise<ProjectWithSessions[]> {
 	const projectsWithSessionsData = await Promise.all(
 		realProjects.map(async (project) => {
 			try {
-				const client = createClient(project.worktree)
+				const client = await createClientSSR(project.worktree)
 				const sessionsResponse = await client.session.list()
 				const allSessions = (sessionsResponse.data || []) as Session[]
 

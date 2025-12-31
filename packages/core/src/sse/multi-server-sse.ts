@@ -6,7 +6,7 @@
  * into a unified stream.
  *
  * Architecture:
- * - Polls /api/opencode-servers to discover running servers
+ * - Polls /api/opencode/servers to discover running servers
  * - Maintains SSE connections to each discovered server
  * - Reconnects automatically on disconnect with exponential backoff
  * - Cleans up connections when servers die
@@ -61,6 +61,7 @@ interface DiscoveredServer {
 	port: number
 	pid: number
 	directory: string
+	sessions?: string[] // Session IDs hosted by this server
 }
 
 interface StatusUpdate {
@@ -129,12 +130,12 @@ export class MultiServerSSE {
 		// First, check if we know which server owns this session
 		const sessionPort = this.sessionToPort.get(sessionId)
 		if (sessionPort) {
-			return `/api/sse/${sessionPort}`
+			return `/api/opencode/${sessionPort}`
 		}
 
 		// Fallback to first port for directory
 		const ports = this.directoryToPorts.get(directory)
-		return ports?.[0] ? `/api/sse/${ports[0]}` : undefined
+		return ports?.[0] ? `/api/opencode/${ports[0]}` : undefined
 	}
 
 	/**
@@ -143,7 +144,7 @@ export class MultiServerSSE {
 	 */
 	getBaseUrlForDirectory(directory: string): string | undefined {
 		const ports = this.directoryToPorts.get(directory)
-		return ports?.[0] ? `/api/sse/${ports[0]}` : undefined
+		return ports?.[0] ? `/api/opencode/${ports[0]}` : undefined
 	}
 
 	/**
@@ -154,6 +155,59 @@ export class MultiServerSSE {
 			if (state === "connected") return true
 		}
 		return false
+	}
+
+	/**
+	 * Check if initial server discovery has completed
+	 * Discovery is considered complete once we have at least one connection
+	 * (either connected or attempting to connect)
+	 */
+	isDiscoveryComplete(): boolean {
+		return this.connectionStates.size > 0
+	}
+
+	/**
+	 * Get list of discovered servers with their connection state and directory
+	 * Useful for debugging and status displays
+	 */
+	getDiscoveredServers(): Array<{
+		port: number
+		directory: string
+		state: ConnectionState
+		lastEventTime?: number
+	}> {
+		const servers: Array<{
+			port: number
+			directory: string
+			state: ConnectionState
+			lastEventTime?: number
+		}> = []
+
+		// Build a map of port -> directory for quick lookup
+		const portToDirectory = new Map<number, string>()
+		for (const [directory, ports] of this.directoryToPorts) {
+			for (const port of ports) {
+				portToDirectory.set(port, directory)
+			}
+		}
+
+		// Get all known ports (from connections and directory mappings)
+		const allPorts = new Set([...this.connectionStates.keys(), ...portToDirectory.keys()])
+
+		for (const port of allPorts) {
+			const directory = portToDirectory.get(port) ?? "unknown"
+			const state = this.connectionStates.get(port) ?? "disconnected"
+			const lastEventTime = this.lastEventTimes.get(port)
+
+			servers.push({
+				port,
+				directory,
+				state,
+				lastEventTime,
+			})
+		}
+
+		return servers.sort((a, b) => a.port - b.port)
 	}
 
 	/**
@@ -327,7 +381,7 @@ export class MultiServerSSE {
 
 	private async discover() {
 		try {
-			const response = await fetch("/api/opencode-servers")
+			const response = await fetch("/api/opencode/servers")
 			if (!response.ok) {
 				console.warn("[MultiServerSSE] Discovery failed:", response.status)
 				return
@@ -342,6 +396,16 @@ export class MultiServerSSE {
 				const existing = this.directoryToPorts.get(server.directory) ?? []
 				existing.push(server.port)
 				this.directoryToPorts.set(server.directory, existing)
+			}
+
+			// Pre-populate sessionToPort cache from discovery response
+			// This fixes web→TUI routing on page load (before SSE events arrive)
+			for (const server of servers) {
+				if (server.sessions) {
+					for (const sessionId of server.sessions) {
+						this.sessionToPort.set(sessionId, server.port)
+					}
+				}
 			}
 
 			// Clean up sessionToPort cache - remove entries for dead servers

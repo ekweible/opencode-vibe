@@ -83,8 +83,8 @@ export function useFileSearch(
 		// Debounce the API call
 		timeoutRef.current = setTimeout(async () => {
 			try {
-				// Create client with directory scoping
-				const client = createClient(directory)
+				// Create client with directory scoping (now async)
+				const client = await createClient(directory)
 
 				// Call SDK to get all matching files
 				// Note: SDK expects dirs as string "true"/"false", not boolean

@@ -1,13 +1,13 @@
 "use client"
 
 import Link from "next/link"
-import { useProvider } from "@opencode-vibe/react"
+import { useProviders } from "@/app/hooks"
 
 /**
  * Client component for provider detail - uses SSE for real-time data
  */
 export function ProviderDetail({ id }: { id: string }) {
-	const { data, loading, error } = useProvider()
+	const { providers, loading, error } = useProviders()
 
 	if (loading) {
 		return (
@@ -32,7 +32,7 @@ export function ProviderDetail({ id }: { id: string }) {
 		)
 	}
 
-	const provider = data?.all.find((p) => p.id === id)
+	const provider = providers.find((p) => p.id === id)
 
 	if (!provider) {
 		return (
@@ -47,8 +47,9 @@ export function ProviderDetail({ id }: { id: string }) {
 		)
 	}
 
-	const isConnected = data?.connected.includes(provider.id) ?? false
-	const defaultModel = data?.defaults[provider.id]
+	// TODO: Restore connection status and default model when atoms expose this data
+	const isConnected = false
+	const defaultModel = undefined
 
 	return (
 		<div className="min-h-screen bg-base p-8">
@@ -78,24 +79,9 @@ export function ProviderDetail({ id }: { id: string }) {
 						</div>
 
 						<div>
-							<h2 className="text-sm font-semibold text-subtext0 uppercase">Source</h2>
-							<p className="text-text">{provider.source}</p>
+							<h2 className="text-sm font-semibold text-subtext0 uppercase">Provider Name</h2>
+							<p className="text-text">{provider.name}</p>
 						</div>
-
-						{provider.env && provider.env.length > 0 && (
-							<div>
-								<h2 className="text-sm font-semibold text-subtext0 uppercase">
-									Environment Variables Required
-								</h2>
-								<ul className="list-disc list-inside space-y-1">
-									{provider.env.map((envVar) => (
-										<li key={envVar} className="text-text font-mono text-sm">
-											{envVar}
-										</li>
-									))}
-								</ul>
-							</div>
-						)}
 
 						{defaultModel && (
 							<div>
@@ -108,9 +94,9 @@ export function ProviderDetail({ id }: { id: string }) {
 
 				<div className="bg-surface0 rounded-lg shadow p-6">
 					<h2 className="text-2xl font-bold text-text mb-4">Available Models</h2>
-					{provider.models && Object.keys(provider.models).length > 0 ? (
+					{provider.models && provider.models.length > 0 ? (
 						<div className="space-y-3">
-							{Object.values(provider.models).map((model) => (
+							{provider.models.map((model) => (
 								<div
 									key={model.id}
 									className="border border-surface1 rounded p-4 hover:bg-surface1 transition-colors"

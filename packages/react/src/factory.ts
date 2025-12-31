@@ -18,15 +18,24 @@
 import { useCallback, useEffect, useState, useRef, useMemo } from "react"
 import type { OpencodeConfig } from "./next-ssr-plugin"
 import { useOpencodeStore } from "./store"
-import type { Session } from "./store/types"
-import { useSendMessage as useBaseSendMessage } from "./hooks/use-send-message"
+import type { Session, ContextUsage, CompactionState, SessionStatus } from "./store/types"
 import { useCommands as useCommandsBase } from "./hooks/use-commands"
-import { useSessionStatus } from "./hooks/internal/use-session-status"
+import { useSSE as useSSEBase } from "./hooks/internal/use-sse"
+import type { UseSSEOptions, UseSSEReturn } from "./hooks/internal/use-sse"
+import { useLiveTime as useLiveTimeBase } from "./hooks/internal/use-live-time"
+import { useSubagent as useSubagentBase } from "./hooks/internal/use-subagent"
+import type { UseSubagentOptions, UseSubagentReturn } from "./hooks/internal/use-subagent"
+import { useProvider as useProviderBase } from "./hooks/internal/use-provider"
+import type { UseProviderResult } from "./hooks/internal/use-provider"
+import { useServers as useServersBase } from "./hooks/use-servers"
+import type { UseServersReturn } from "./hooks/use-servers"
+import { multiServerSSE } from "@opencode-vibe/core/sse"
 import type { Prompt } from "./types/prompt"
 import { providers, projects, sessions } from "@opencode-vibe/core/api"
-import type { Provider, Model, Project } from "@opencode-vibe/core/atoms"
+import type { Provider, Project } from "@opencode-vibe/core/atoms"
 import type { SlashCommand } from "./types/prompt"
 import { createClient } from "./lib/client-stub"
+import { convertToApiParts } from "./lib/prompt-api"
 import fuzzysort from "fuzzysort"
 
 /**
@@ -43,30 +52,66 @@ declare global {
  *
  * @param fallback - Optional fallback config for tests
  * @returns OpencodeConfig
- * @throws Error if no config found and no fallback provided
+ * @throws Error if no config found and no fallback provided (client-side only)
  *
  * @example
  * ```tsx
  * const config = getOpencodeConfig()
  * // { baseUrl: "/api/opencode/4056", directory: "/path" }
  * ```
+ *
+ * @remarks
+ * SSR Safety: During server-side rendering, returns fallback or empty config.
+ * Client components calling this during render will get empty config on server,
+ * then real config after hydration. Use useEffect if you need client-only execution.
  */
 export function getOpencodeConfig(fallback?: OpencodeConfig): OpencodeConfig {
-	// 1. Check globalThis (from SSR plugin)
-	if (typeof window !== "undefined" && window.__OPENCODE) {
+	// 1. SSR guard - return fallback or placeholder during server render
+	// CRITICAL: Client components still render on server in Next.js
+	// This prevents errors when hooks call getOpencodeConfig during render
+	if (typeof window === "undefined") {
+		return fallback ?? { baseUrl: "", directory: "" }
+	}
+
+	// 2. Check globalThis (from SSR plugin)
+	if (window.__OPENCODE) {
 		return window.__OPENCODE
 	}
 
-	// 2. Fallback to provided config (for tests)
+	// 3. Fallback to provided config (for tests)
 	if (fallback?.baseUrl) {
 		return fallback
 	}
 
-	// 3. No config available - throw helpful error
+	// 4. No config available - throw helpful error (client-side only)
 	throw new Error(
 		"OpenCode: No configuration found. " +
 			"Did you forget to add <OpencodeSSRPlugin> to your layout?",
 	)
+}
+
+/**
+ * Default state objects (stable references)
+ * CRITICAL: These MUST be outside functions to prevent new objects on every render
+ */
+const DEFAULT_COMPACTION_STATE: CompactionState = {
+	isCompacting: false,
+	isAutomatic: false,
+	progress: "complete",
+	startedAt: 0,
+}
+
+const DEFAULT_CONTEXT_USAGE: ContextUsage = {
+	used: 0,
+	limit: 200000,
+	percentage: 0,
+	isNearLimit: false,
+	tokens: {
+		input: 0,
+		output: 0,
+		cached: 0,
+	},
+	lastUpdated: 0,
 }
 
 /**
@@ -143,8 +188,8 @@ export function generateOpencodeHelpers<TRouter = any>(config?: OpencodeConfig) 
 			useCallback(
 				(state) => {
 					const dir = state.directories[cfg.directory]
-					if (!dir) return []
-					return dir.messages[sessionId] || []
+					if (!dir) return undefined
+					return dir.messages[sessionId]
 				},
 				[sessionId, cfg.directory],
 			),
@@ -155,49 +200,229 @@ export function generateOpencodeHelpers<TRouter = any>(config?: OpencodeConfig) 
 			useOpencodeStore.getState().initDirectory(cfg.directory)
 		}, [cfg.directory])
 
-		return messages
+		// CRITICAL: Use stable empty array to prevent infinite loop
+		// Don't use || [] or ?? [] in render - creates new reference every time
+		return useMemo(() => messages ?? [], [messages])
 	}
 
 	/**
-	 * Hook for sending messages to a session
+	 * Hook for sending messages to a session with FIFO queue
 	 *
-	 * @param options - Session ID and optional directory
-	 * @returns sendMessage function and isPending state
+	 * Self-contained implementation that doesn't depend on OpencodeProvider.
+	 * Accepts full Prompt parts (text, file, image attachments).
+	 *
+	 * @param options - Object with sessionId
+	 * @returns sendMessage function, isPending state, error, and queueLength
 	 *
 	 * @example
 	 * ```tsx
-	 * const { sendMessage, isPending } = useSendMessage({ sessionId: "session-123" })
-	 * await sendMessage({ text: "Hello" })
+	 * const { sendMessage, isPending, error, queueLength } = useSendMessage({ sessionId: "session-123" })
+	 * const parts: Prompt = [
+	 *   { type: "text", content: "Fix bug in ", start: 0, end: 11 },
+	 *   { type: "file", path: "src/auth.ts", content: "@src/auth.ts", start: 11, end: 23 }
+	 * ]
+	 * await sendMessage(parts)
 	 * ```
 	 */
 	function useSendMessage(options: { sessionId: string }) {
 		const cfg = getOpencodeConfig(config)
+		console.log("[useSendMessage] config:", cfg)
+		const [isLoading, setIsLoading] = useState(false)
+		const [error, setError] = useState<Error | undefined>(undefined)
+		const [queueLength, setQueueLength] = useState(0)
 
-		// Use the existing useSendMessage hook from hooks/
-		const { sendMessage: baseSendMessage, isLoading } = useBaseSendMessage({
-			sessionId: options.sessionId,
-			directory: cfg.directory,
-		})
+		// Get command registry for slash command detection
+		const { findCommand } = useCommandsBase()
 
-		// Wrap sendMessage to accept simplified { text: string } input
-		const sendMessage = useCallback(
-			async (input: { text: string }) => {
-				// Convert simple text input to Prompt format
-				const parts: Prompt = [
-					{
-						type: "text",
-						content: input.text,
-						start: 0,
-						end: input.text.length,
-					},
-				]
+		// Types for message queue
+		type ParsedCommand =
+			| { isCommand: false }
+			| {
+					isCommand: true
+					commandName: string
+					arguments: string
+					type: SlashCommand["type"]
+			  }
 
-				await baseSendMessage(parts)
+		interface QueuedMessage {
+			parts: Prompt
+			resolve: () => void
+			reject: (error: Error) => void
+		}
+
+		/**
+		 * Parse prompt parts to detect slash commands.
+		 * Only text parts are checked - file/image parts are ignored.
+		 */
+		const parseSlashCommand = useCallback(
+			(parts: Prompt): ParsedCommand => {
+				// Extract text content only (ignore file/image parts)
+				const text = parts
+					.filter((p): p is Extract<typeof p, { type: "text" }> => p.type === "text")
+					.map((p) => p.content)
+					.join("")
+					.trim()
+
+				// Not a command if doesn't start with /
+				if (!text.startsWith("/")) {
+					return { isCommand: false }
+				}
+
+				// Parse command name and arguments
+				const [cmdPart = "", ...argParts] = text.split(" ")
+				const commandName = cmdPart.slice(1) // Remove leading /
+				const args = argParts.join(" ")
+
+				// Look up command in registry
+				const command = findCommand(commandName)
+				if (!command) {
+					// Unknown command - treat as regular prompt
+					return { isCommand: false }
+				}
+
+				return {
+					isCommand: true,
+					commandName,
+					arguments: args,
+					type: command.type,
+				}
 			},
-			[baseSendMessage],
+			[findCommand],
 		)
 
-		return { sendMessage, isPending: isLoading }
+		// Queue for pending messages
+		const queueRef = useRef<QueuedMessage[]>([])
+		const isProcessingRef = useRef(false)
+		const processNextRef = useRef<(() => Promise<void>) | undefined>(undefined)
+
+		// Track session status to know when to process next message
+		const status = useSessionStatus(options.sessionId)
+		const running = status === "running"
+
+		/**
+		 * Process a single message via API.
+		 *
+		 * Routes messages based on content:
+		 * - Custom slash commands → session.command route
+		 * - Builtin slash commands → skip (handled client-side)
+		 * - Regular prompts → session.promptAsync route
+		 */
+		const processMessage = useCallback(
+			async (parts: Prompt): Promise<boolean> => {
+				console.log("[processMessage] parts:", parts)
+				// Check if this is a slash command
+				const parsed = parseSlashCommand(parts)
+				console.log("[processMessage] parsed:", parsed)
+
+				if (parsed.isCommand) {
+					if (parsed.type === "custom") {
+						// Custom command - route to session.command
+						console.log("[processMessage] sending custom command:", parsed.commandName)
+						await sessions.command(
+							options.sessionId,
+							parsed.commandName,
+							parsed.arguments,
+							cfg.directory,
+						)
+						return true
+					}
+					// Builtin command - skip, handled client-side
+					console.log("[processMessage] builtin command, skipping")
+					return false
+				}
+
+				// Regular prompt - convert and send via session.promptAsync
+				const apiParts = convertToApiParts(parts, cfg.directory || "")
+				console.log("[processMessage] sending prompt:", {
+					sessionId: options.sessionId,
+					apiParts,
+					directory: cfg.directory,
+				})
+				await sessions.promptAsync(options.sessionId, apiParts, undefined, cfg.directory)
+				console.log("[processMessage] prompt sent successfully")
+				return true
+			},
+			[options.sessionId, cfg.directory, parseSlashCommand],
+		)
+
+		// Process next message from queue if session is idle
+		const processNext = useCallback(async () => {
+			// Don't process if:
+			// - Already processing a message
+			// - Queue is empty
+			// - Session is running (server-side AI is busy)
+			if (isProcessingRef.current || queueRef.current.length === 0 || running) {
+				return
+			}
+
+			isProcessingRef.current = true
+			setIsLoading(true)
+
+			const message = queueRef.current[0]! // Peek first
+
+			try {
+				setError(undefined)
+				// Fire the message (promptAsync returns immediately - 204 response)
+				await processMessage(message.parts)
+				// Remove from queue after send completes
+				queueRef.current.shift()
+				setQueueLength(queueRef.current.length)
+				message.resolve()
+			} catch (err) {
+				const error = err instanceof Error ? err : new Error(String(err))
+				setError(error)
+				// Remove failed message from queue
+				queueRef.current.shift()
+				setQueueLength(queueRef.current.length)
+				message.reject(error)
+			} finally {
+				isProcessingRef.current = false
+				setIsLoading(false)
+
+				// After finishing, try to process next message in queue
+				if (queueRef.current.length > 0 && processNextRef.current) {
+					// Use setTimeout to avoid recursive call stack
+					setTimeout(() => processNextRef.current?.(), 0)
+				}
+			}
+		}, [processMessage, running])
+
+		// Store processNext in ref so it can call itself without circular dep
+		processNextRef.current = processNext
+
+		const sendMessage = useCallback(
+			async (parts: Prompt) => {
+				// Don't send empty messages
+				if (parts.length === 0) {
+					return
+				}
+
+				return new Promise<void>((resolve, reject) => {
+					// Add to queue
+					queueRef.current.push({ parts, resolve, reject })
+					setQueueLength(queueRef.current.length)
+
+					// Try to process immediately if session is idle
+					processNext()
+				})
+			},
+			[processNext],
+		)
+
+		// Watch session status - when session becomes idle, process next queued message
+		useEffect(() => {
+			// Session became idle - process next message in queue
+			if (!running && queueRef.current.length > 0 && !isProcessingRef.current) {
+				processNext()
+			}
+		}, [running, processNext])
+
+		return {
+			sendMessage,
+			isPending: isLoading,
+			error,
+			queueLength,
+		}
 	}
 
 	/**
@@ -211,9 +436,11 @@ export function generateOpencodeHelpers<TRouter = any>(config?: OpencodeConfig) 
 	function useSessionList(): Session[] {
 		const cfg = getOpencodeConfig(config)
 
+		// Get sessions array from store (stable reference via Immer)
 		const sessions = useOpencodeStore((state) => state.directories[cfg.directory]?.sessions)
 
-		// Filter in useMemo to avoid creating new array on every render
+		// CRITICAL: Filter in useMemo to avoid creating new array on every render
+		// The sessions reference from Zustand only changes when sessions actually update
 		return useMemo(() => {
 			if (!sessions) return []
 			return sessions.filter((s) => !s.time?.archived)
@@ -231,6 +458,7 @@ export function generateOpencodeHelpers<TRouter = any>(config?: OpencodeConfig) 
 		const [error, setError] = useState<Error | null>(null)
 		const [refreshKey, setRefreshKey] = useState(0)
 
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 		useEffect(() => {
 			let cancelled = false
 
@@ -258,8 +486,6 @@ export function generateOpencodeHelpers<TRouter = any>(config?: OpencodeConfig) 
 			return () => {
 				cancelled = true
 			}
-			// refreshKey intentionally used for refetch pattern
-			// eslint-disable-next-line react-hooks/exhaustive-deps
 		}, [refreshKey])
 
 		const refetch = () => setRefreshKey((k) => k + 1)
@@ -283,6 +509,7 @@ export function generateOpencodeHelpers<TRouter = any>(config?: OpencodeConfig) 
 		const [error, setError] = useState<Error | null>(null)
 		const [refreshKey, setRefreshKey] = useState(0)
 
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 		useEffect(() => {
 			let cancelled = false
 
@@ -310,8 +537,6 @@ export function generateOpencodeHelpers<TRouter = any>(config?: OpencodeConfig) 
 			return () => {
 				cancelled = true
 			}
-			// refreshKey intentionally used for refetch pattern
-			// eslint-disable-next-line react-hooks/exhaustive-deps
 		}, [refreshKey])
 
 		const refetch = () => setRefreshKey((k) => k + 1)
@@ -402,8 +627,8 @@ export function generateOpencodeHelpers<TRouter = any>(config?: OpencodeConfig) 
 			// Debounce the API call
 			timeoutRef.current = setTimeout(async () => {
 				try {
-					// Create client with directory scoping
-					const client = createClient(cfg.directory)
+					// Create client with directory scoping (now async)
+					const client = await createClient(cfg.directory)
 
 					// Call SDK to get all matching files
 					const response = await client.find.files({
@@ -443,15 +668,393 @@ export function generateOpencodeHelpers<TRouter = any>(config?: OpencodeConfig) 
 		return { files, isLoading, error }
 	}
 
+	/**
+	 * Hook for SSE connection with config-aware URL
+	 *
+	 * DEPRECATED: This hook is broken. Use useSSESync() instead.
+	 * Components should use store selectors, not raw SSE events.
+	 *
+	 * @param options - Optional override for url (uses config baseUrl by default)
+	 * @returns SSE connection state with events, connected, error
+	 *
+	 * @example
+	 * ```tsx
+	 * // ❌ DON'T USE - broken
+	 * const { events, connected, error } = useSSE()
+	 *
+	 * // ✅ USE - works correctly
+	 * useSSESync() // At top level
+	 * const status = useSessionStatus(sessionId) // Subscribe to store
+	 * ```
+	 */
+	function useSSE(options?: Partial<UseSSEOptions>): UseSSEReturn {
+		console.warn(
+			"[useSSE] DEPRECATED: This hook is broken. Use useSSESync() + store selectors instead.",
+		)
+		// Only call getOpencodeConfig if we need the baseUrl
+		// This allows useSSE({ url: "..." }) to work without config
+		const url = options?.url ?? getOpencodeConfig(config).baseUrl
+		return useSSEBase({
+			url,
+			heartbeatTimeout: options?.heartbeatTimeout,
+		})
+	}
+
+	/**
+	 * Hook for session status (running/idle)
+	 *
+	 * Considers BOTH main AI response AND sub-agent activity:
+	 * - Main session is running: status = "running"
+	 * - OR any task part (sub-agent) is running: status = "running"
+	 * - Otherwise: status = "completed"
+	 *
+	 * @param sessionId - Session ID
+	 * @returns Session status object
+	 *
+	 * @example
+	 * ```tsx
+	 * const status = useSessionStatus(sessionId)
+	 * if (status === "running") { ... }
+	 * ```
+	 */
+	function useSessionStatus(sessionId: string): SessionStatus {
+		const cfg = getOpencodeConfig(config)
+		return useOpencodeStore(
+			useCallback(
+				(state) => {
+					const dir = state.directories[cfg.directory]
+					if (!dir) return "completed"
+
+					// Check main session status
+					const mainStatus = dir.sessionStatus[sessionId] ?? "completed"
+					if (mainStatus === "running") return "running"
+
+					// Check for running sub-agents (task parts)
+					const messages = dir.messages[sessionId]
+					if (!messages) return mainStatus
+
+					// Look for any running task parts in session messages
+					for (const message of messages) {
+						const parts = dir.parts[message.id]
+						if (!parts) continue
+
+						for (const part of parts) {
+							if (part.type === "tool" && part.tool === "task" && part.state.status === "running") {
+								return "running"
+							}
+						}
+					}
+
+					return mainStatus
+				},
+				[sessionId, cfg.directory],
+			),
+		)
+	}
+
+	/**
+	 * Hook for compaction state
+	 *
+	 * @param sessionId - Session ID
+	 * @returns Compaction state
+	 *
+	 * @example
+	 * ```tsx
+	 * const { isCompacting, progress } = useCompactionState(sessionId)
+	 * ```
+	 */
+	function useCompactionState(sessionId: string): CompactionState {
+		const cfg = getOpencodeConfig(config)
+
+		return useOpencodeStore(
+			useCallback(
+				(state) =>
+					state.directories[cfg.directory]?.compaction[sessionId] ?? DEFAULT_COMPACTION_STATE,
+				[sessionId, cfg.directory],
+			),
+		)
+	}
+
+	/**
+	 * Hook for context usage (token counts)
+	 *
+	 * @param sessionId - Session ID
+	 * @returns Context usage state
+	 *
+	 * @example
+	 * ```tsx
+	 * const { used, limit, percentage } = useContextUsage(sessionId)
+	 * ```
+	 */
+	function useContextUsage(sessionId: string): ContextUsage {
+		const cfg = getOpencodeConfig(config)
+
+		return useOpencodeStore(
+			useCallback(
+				(state) =>
+					state.directories[cfg.directory]?.contextUsage[sessionId] ?? DEFAULT_CONTEXT_USAGE,
+				[sessionId, cfg.directory],
+			),
+		)
+	}
+
+	/**
+	 * Hook for live time updates (re-renders at interval)
+	 *
+	 * @param interval - Milliseconds between ticks (default: 60000)
+	 * @returns Tick counter
+	 *
+	 * @example
+	 * ```tsx
+	 * const tick = useLiveTime() // Re-render every minute
+	 * ```
+	 */
+	function useLiveTime(interval?: number): number {
+		return useLiveTimeBase(interval)
+	}
+
+	/**
+	 * Hook for accessing a specific part's subagent
+	 *
+	 * @param options - Object with partId
+	 * @returns Subagent state and actions
+	 *
+	 * @example
+	 * ```tsx
+	 * const { subagent, isExpanded, toggleExpanded } = useSubagent({ partId: part.id })
+	 * ```
+	 */
+	function useSubagent(options: UseSubagentOptions): UseSubagentReturn {
+		return useSubagentBase(options)
+	}
+
+	/**
+	 * Hook for server discovery (Effect-based)
+	 *
+	 * @returns Servers, loading state, error, refetch
+	 *
+	 * @example
+	 * ```tsx
+	 * const { servers, loading } = useServersEffect()
+	 * ```
+	 */
+	function useServersEffect(): UseServersReturn {
+		return useServersBase()
+	}
+
+	/**
+	 * Hook to get SSE connection status from multiServerSSE
+	 *
+	 * SSR-safe: Returns default state during server render, hydrates with actual state on client.
+	 *
+	 * @returns Connection status with connected state, server count, and discovery state
+	 *
+	 * @example
+	 * ```tsx
+	 * const { connected, serverCount, discovering } = useConnectionStatus()
+	 * if (connected) {
+	 *   console.log(`Connected to ${serverCount} servers`)
+	 * }
+	 * ```
+	 */
+	function useConnectionStatus(): {
+		connected: boolean
+		serverCount: number
+		discovering: boolean
+	} {
+		// SSR-safe initial state
+		const [state, setState] = useState(() => {
+			// During SSR, return safe defaults
+			if (typeof window === "undefined") {
+				return {
+					connected: false,
+					serverCount: 0,
+					discovering: true,
+				}
+			}
+			// On client, get initial state immediately
+			return {
+				connected: multiServerSSE.isConnected(),
+				serverCount: multiServerSSE.getConnectionStatus().size,
+				discovering: !multiServerSSE.isDiscoveryComplete(),
+			}
+		})
+
+		useEffect(() => {
+			// Update state on interval (client-only)
+			const updateState = () => {
+				setState({
+					connected: multiServerSSE.isConnected(),
+					serverCount: multiServerSSE.getConnectionStatus().size,
+					discovering: !multiServerSSE.isDiscoveryComplete(),
+				})
+			}
+
+			// Initial update
+			updateState()
+
+			// Poll for state changes (multiServerSSE doesn't expose state change events)
+			const interval = setInterval(updateState, 1000)
+
+			return () => clearInterval(interval)
+		}, [])
+
+		return state
+	}
+
+	/**
+	 * Hook to start SSE and sync events to the Zustand store
+	 *
+	 * This is the critical hook that wires up real-time updates.
+	 * Call this once at the top level of your session page.
+	 *
+	 * @example
+	 * ```tsx
+	 * function SessionPage({ sessionId }) {
+	 *   useSSESync() // Start SSE and wire to store
+	 *   const messages = useMessages(sessionId) // Now updates in real-time
+	 *   return <MessageList messages={messages} />
+	 * }
+	 * ```
+	 */
+	function useSSESync(): void {
+		const cfg = getOpencodeConfig(config)
+
+		// Start MultiServerSSE singleton (idempotent)
+		useEffect(() => {
+			console.log("[useSSESync] Starting multiServerSSE")
+			multiServerSSE.start()
+		}, [])
+
+		// Subscribe to events and route to store
+		useEffect(() => {
+			console.log("[useSSESync] Subscribing to SSE events for directory:", cfg.directory)
+
+			const unsubscribe = multiServerSSE.onEvent((event) => {
+				// Only process events for our directory
+				if (event.directory !== cfg.directory) return
+
+				console.log("[useSSESync] Received event:", event.payload.type)
+
+				// Route to store
+				useOpencodeStore.getState().handleSSEEvent({
+					directory: event.directory,
+					payload: event.payload,
+				})
+			})
+
+			return () => {
+				console.log("[useSSESync] Unsubscribing from SSE events")
+				unsubscribe()
+			}
+		}, [cfg.directory])
+	}
+
+	/**
+	 * Hook for fetching provider data with connection status and defaults
+	 *
+	 * @returns Provider data with { all, connected, defaults }, loading, error, refetch
+	 *
+	 * @example
+	 * ```tsx
+	 * const { data, loading, error } = useProvider()
+	 * if (data) {
+	 *   console.log(data.all, data.connected, data.defaults)
+	 * }
+	 * ```
+	 */
+	function useProvider(): UseProviderResult {
+		return useProviderBase()
+	}
+
+	/**
+	 * Hook for accessing messages with their associated parts
+	 *
+	 * @param sessionId - Session ID to get messages for
+	 * @returns Array of messages with parts
+	 *
+	 * @example
+	 * ```tsx
+	 * const messages = useMessagesWithParts("session-123")
+	 * messages.forEach(msg => {
+	 *   console.log(msg.info.role, msg.parts.length)
+	 * })
+	 * ```
+	 */
+	function useMessagesWithParts(sessionId: string) {
+		const cfg = getOpencodeConfig(config)
+
+		// Select raw data from store - these are stable references from Immer
+		const messages = useOpencodeStore(
+			useCallback(
+				(state) => {
+					const dir = state.directories[cfg.directory]
+					if (!dir) return undefined
+					return dir.messages[sessionId]
+				},
+				[sessionId, cfg.directory],
+			),
+		)
+		const partsMap = useOpencodeStore(
+			useCallback(
+				(state) => {
+					const dir = state.directories[cfg.directory]
+					if (!dir) return undefined
+					return dir.parts
+				},
+				[cfg.directory],
+			),
+		)
+
+		useEffect(() => {
+			if (!cfg.directory) return
+			useOpencodeStore.getState().initDirectory(cfg.directory)
+		}, [cfg.directory])
+
+		// Derive the combined structure with useMemo to avoid infinite loops
+		// Only recomputes when messages or partsMap references change
+		return useMemo(() => {
+			if (!messages) return []
+
+			return messages.map((message) => ({
+				info: message,
+				parts: partsMap?.[message.id] ?? [],
+			}))
+		}, [messages, partsMap])
+	}
+
 	return {
 		useSession,
 		useMessages,
+		useMessagesWithParts,
 		useSendMessage,
 		useSessionList,
 		useProviders,
+		useProvider,
 		useProjects,
 		useCommands,
 		useCreateSession,
 		useFileSearch,
+		useSSE,
+		useSSESync,
+		useConnectionStatus,
+		useSessionStatus,
+		useCompactionState,
+		useContextUsage,
+		useLiveTime,
+		useSubagent,
+		useServersEffect,
 	}
+}
+
+/**
+ * Format token count with K/M suffix
+ *
+ * @param n - Token count
+ * @returns Formatted string (e.g., "1.5K", "2.3M")
+ */
+export function formatTokens(n: number): string {
+	if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`
+	if (n >= 1000) return `${(n / 1000).toFixed(1)}K`
+	return n.toString()
 }

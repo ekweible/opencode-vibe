@@ -46,16 +46,17 @@ function generatePartId(): string {
  * @returns Array of API parts ready to send to server
  */
 export function convertToApiParts(parts: Prompt, directory: string): ApiPart[] {
-	return parts.map((part) => {
+	console.log("[convertToApiParts] Input:", { parts, directory })
+	const result: ApiPart[] = []
+
+	for (const part of parts) {
 		if (part.type === "text") {
-			return {
+			result.push({
 				type: "text",
 				text: part.content,
 				id: generatePartId(),
-			}
-		}
-
-		if (part.type === "file") {
+			} satisfies ApiTextPart)
+		} else if (part.type === "file") {
 			// Convert relative path to absolute file:// URL
 			const absolutePath = part.path.startsWith("/") ? part.path : `${directory}/${part.path}`
 
@@ -66,22 +67,25 @@ export function convertToApiParts(parts: Prompt, directory: string): ApiPart[] {
 			const ext = filename.split(".").pop()?.toLowerCase()
 			const mime = getMimeType(ext || "")
 
-			return {
+			result.push({
 				type: "file",
 				mime,
 				url: `file://${absolutePath}`,
 				filename,
-			}
+			} satisfies ApiFilePart)
+		} else {
+			// image part - uses dataUrl from ImageAttachmentPart
+			result.push({
+				type: "image",
+				mime: part.mime,
+				url: part.dataUrl,
+				filename: part.filename,
+			} satisfies ApiImagePart)
 		}
+	}
 
-		// image part - uses dataUrl from ImageAttachmentPart
-		return {
-			type: "image",
-			mime: part.mime,
-			url: part.dataUrl,
-			filename: part.filename,
-		}
-	})
+	console.log("[convertToApiParts] Output:", result)
+	return result
 }
 
 /**

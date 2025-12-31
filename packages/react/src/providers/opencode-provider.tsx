@@ -72,14 +72,14 @@ const getStoreActions = () => useOpencodeStore.getState()
  * and routes events to the Zustand store via handleSSEEvent.
  */
 export function OpencodeProvider({ url, directory, children }: OpencodeProviderProps) {
-	// Create client and caller for this directory (stable across renders)
-	const client = useMemo(() => createClient(directory), [directory])
+	// getClient returns a Promise since createClient is now async
+	const getClient = useCallback(() => createClient(directory), [directory])
 	const caller = useMemo(() => {
 		const router = createRouter(createRoutes())
 		// Type assertion needed: SDK client type doesn't match router's minimal interface exactly
-		// but is compatible at runtime
-		return createCaller(router, { sdk: client as any })
-	}, [client])
+		// but is compatible at runtime. getClient() returns Promise, caller will await it.
+		return createCaller(router, { sdk: getClient() as any })
+	}, [getClient])
 
 	const bootstrapCalledRef = useRef(false)
 	const bootstrapRef = useRef<() => Promise<void>>(() => Promise.resolve())
@@ -100,6 +100,7 @@ export function OpencodeProvider({ url, directory, children }: OpencodeProviderP
 
 		// Load sessions first (most important)
 		try {
+			const client = await getClient()
 			const sessionsResponse = await client.session.list()
 			const fourHoursAgo = Date.now() - 4 * 60 * 60 * 1000
 
@@ -128,6 +129,7 @@ export function OpencodeProvider({ url, directory, children }: OpencodeProviderP
 
 		// Load session statuses separately (non-critical)
 		try {
+			const client = await getClient()
 			const statusResponse = await client.session.status()
 			if (statusResponse.data) {
 				for (const [sessionID, status] of Object.entries(statusResponse.data)) {
@@ -147,6 +149,7 @@ export function OpencodeProvider({ url, directory, children }: OpencodeProviderP
 
 		// Load providers to cache model limits (for context usage calculation)
 		try {
+			const client = await getClient()
 			const providerResponse = await client.provider.list()
 			if (providerResponse.data?.all) {
 				const modelLimits: Record<string, { context: number; output: number }> = {}
@@ -178,7 +181,7 @@ export function OpencodeProvider({ url, directory, children }: OpencodeProviderP
 				error instanceof Error ? error.message : error,
 			)
 		}
-	}, [directory, client])
+	}, [directory, getClient])
 
 	// Keep ref updated for stable access in callbacks
 	bootstrapRef.current = bootstrap
@@ -192,6 +195,9 @@ export function OpencodeProvider({ url, directory, children }: OpencodeProviderP
 	const sync = useCallback(
 		async (sessionID: string) => {
 			const store = getStoreActions()
+
+			// Create client first (async)
+			const client = await getClient()
 
 			// Fetch all data in parallel, handling failures individually
 			const [messagesResult, todoResult, diffResult] = await Promise.allSettled([
@@ -235,7 +241,7 @@ export function OpencodeProvider({ url, directory, children }: OpencodeProviderP
 				})
 			}
 		},
-		[directory, client],
+		[directory, getClient],
 	)
 
 	/**

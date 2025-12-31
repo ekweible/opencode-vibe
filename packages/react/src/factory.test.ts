@@ -90,6 +90,42 @@ describe("generateOpencodeHelpers", () => {
 				getOpencodeConfig(invalidFallback)
 			}).toThrow(/No configuration found/)
 		})
+
+		it("returns fallback during SSR (typeof window === undefined)", () => {
+			// Simulate SSR by temporarily removing window
+			const originalWindow = global.window
+			// @ts-expect-error - Simulating SSR environment
+			delete global.window
+
+			const fallback: OpencodeConfig = {
+				baseUrl: "/ssr-fallback",
+				directory: "/ssr-path",
+			}
+
+			const config = getOpencodeConfig(fallback)
+
+			expect(config.baseUrl).toBe("/ssr-fallback")
+			expect(config.directory).toBe("/ssr-path")
+
+			// Restore window
+			global.window = originalWindow
+		})
+
+		it("returns placeholder config during SSR without fallback", () => {
+			// Simulate SSR by temporarily removing window
+			const originalWindow = global.window
+			// @ts-expect-error - Simulating SSR environment
+			delete global.window
+
+			const config = getOpencodeConfig()
+
+			// Should return placeholder, not throw
+			expect(config.baseUrl).toBe("")
+			expect(config.directory).toBe("")
+
+			// Restore window
+			global.window = originalWindow
+		})
 	})
 
 	describe("config serialization", () => {
@@ -225,9 +261,9 @@ describe("generateOpencodeHelpers", () => {
 				expect(hookNames).toContain("useFileSearch")
 			})
 
-			it("generates exactly 9 hooks", () => {
+			it("generates exactly 19 hooks", () => {
 				const hookCount = Object.keys(helpers).length
-				expect(hookCount).toBe(9)
+				expect(hookCount).toBe(19)
 			})
 		})
 	})

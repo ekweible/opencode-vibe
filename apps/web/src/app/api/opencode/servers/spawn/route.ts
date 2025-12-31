@@ -4,7 +4,7 @@
  * Spawns a headless opencode server for a given directory if none exists.
  * Uses `opencode serve` command to start the server in the background.
  *
- * POST /api/opencode-servers/spawn
+ * POST /api/opencode/servers/spawn
  * Body: { directory: string }
  * Returns: { port: number; pid: number; directory: string } or { error: string }
  */
@@ -27,7 +27,7 @@ interface DiscoveredServer {
  */
 async function findExistingServer(directory: string): Promise<DiscoveredServer | null> {
 	try {
-		const res = await fetch("http://127.0.0.1:8423/api/opencode-servers")
+		const res = await fetch("http://127.0.0.1:8423/api/opencode/servers")
 		if (!res.ok) return null
 
 		const servers: DiscoveredServer[] = await res.json()

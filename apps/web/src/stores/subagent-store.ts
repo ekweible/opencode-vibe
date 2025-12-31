@@ -12,7 +12,7 @@
 import { create } from "zustand"
 import { immer } from "zustand/middleware/immer"
 import { enableMapSet } from "immer"
-import type { Message, Part } from "@opencode-vibe/react"
+import type { Message, Part } from "@/app/hooks"
 
 // Enable Immer MapSet plugin for Set support
 enableMapSet()

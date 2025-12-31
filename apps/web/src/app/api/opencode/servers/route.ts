@@ -26,6 +26,7 @@ interface DiscoveredServer {
 	port: number
 	pid: number
 	directory: string
+	sessions?: string[] // Session IDs hosted by this server
 }
 
 interface CandidatePort {
@@ -34,7 +35,7 @@ interface CandidatePort {
 }
 
 /**
- * Verify a port is actually an opencode server and get its directory
+ * Verify a port is actually an opencode server and get its directory + sessions
  * Returns null if not a valid opencode server
  */
 async function verifyOpencodeServer(candidate: CandidatePort): Promise<DiscoveredServer | null> {
@@ -42,6 +43,7 @@ async function verifyOpencodeServer(candidate: CandidatePort): Promise<Discovere
 	const timeoutId = setTimeout(() => controller.abort(), 500)
 
 	try {
+		// Fetch project info
 		const res = await fetch(`http://127.0.0.1:${candidate.port}/project/current`, {
 			signal: controller.signal,
 		})
@@ -56,10 +58,31 @@ async function verifyOpencodeServer(candidate: CandidatePort): Promise<Discovere
 			return null
 		}
 
+		// Fetch session list
+		let sessions: string[] | undefined
+		try {
+			const sessionTimeout = setTimeout(() => controller.abort(), 300)
+			const sessionRes = await fetch(`http://127.0.0.1:${candidate.port}/session`, {
+				signal: controller.signal,
+			})
+			clearTimeout(sessionTimeout)
+
+			if (sessionRes.ok) {
+				const sessionList = await sessionRes.json()
+				sessions = Array.isArray(sessionList)
+					? sessionList.map((s: { id: string }) => s.id)
+					: undefined
+			}
+		} catch {
+			// Session fetch failed - not critical, continue without sessions
+			sessions = undefined
+		}
+
 		return {
 			port: candidate.port,
 			pid: candidate.pid,
 			directory,
+			sessions,
 		}
 	} catch {
 		clearTimeout(timeoutId)
@@ -105,7 +128,7 @@ export async function GET() {
 			if (error.stdout !== undefined) {
 				return { stdout: error.stdout || "" }
 			}
-			console.error("[opencode-servers] lsof failed:", error.message)
+			console.error("[opencode/servers] lsof failed:", error.message)
 			throw error
 		})
 
@@ -134,7 +157,7 @@ export async function GET() {
 		const duration = Date.now() - startTime
 		if (duration > 500) {
 			console.warn(
-				`[opencode-servers] Slow discovery: ${duration}ms for ${candidates.length} candidates`,
+				`[opencode/servers] Slow discovery: ${duration}ms for ${candidates.length} candidates`,
 			)
 		}
 
@@ -145,7 +168,7 @@ export async function GET() {
 		})
 	} catch (error) {
 		const duration = Date.now() - startTime
-		console.error("[opencode-servers] Discovery failed:", {
+		console.error("[opencode/servers] Discovery failed:", {
 			error: error instanceof Error ? error.message : String(error),
 			stack: error instanceof Error ? error.stack : undefined,
 			duration: `${duration}ms`,
