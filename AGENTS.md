@@ -307,9 +307,11 @@ const world = await stream.getSnapshot()
 **Key Principle:** Core pushes complete world state; consumers just subscribe. No coordination burden on clients.
 
 **Key Files:**
-- `packages/core/src/world/*.ts` - World stream, atoms, derivation
+- `packages/core/src/world/merged-stream.ts` - Unified streaming (SSE + pluggable sources)
+- `packages/core/src/world/stream.ts` - Public API (delegates to merged-stream)
+- `packages/core/src/world/atoms.ts` - World store (effect-atom state)
 - `packages/react/src/hooks/use-world.ts` - React binding (calls Core promise APIs)
-- `packages/core/src/sse/*.ts` - SSE connection feeds atoms
+- `packages/core/src/world/sse.ts` - SSE connection feeds atoms
 
 ### Core Layer Responsibility (ADR-016)
 

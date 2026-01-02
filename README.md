@@ -103,7 +103,7 @@ bun test --watch        # Watch mode
 ## Documentation
 
 - **`apps/web/README.md`** - Web app architecture and patterns
-- **`packages/core/README.md`** - Core SDK and router documentation
+- **`packages/core/README.md`** - Core SDK and world stream documentation
 - **`packages/react/README.md`** - React hooks and providers
 - **`docs/adr/`** - Architecture Decision Records
   - ADR-016: Core Layer Responsibility (Core owns computation, React binds UI)

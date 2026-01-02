@@ -63,14 +63,15 @@ The visualizer shows:
 
 ## Architecture
 
-Uses `createWorldStream` from `@opencode-vibe/core/world`:
+Uses `createWorldStream` from `@opencode-vibe/core/world` (unified streaming):
 
 ```
-OpenCode Backend → SSE Events → WorldStore (atoms) → CLI render
+OpenCode Backend → SSE Events → Merged Stream → WorldStore (atoms) → CLI render
 ```
 
 Key points:
 - Uses `createWorldStream().subscribe()` for live updates
+- Unified streaming layer combines SSE and pluggable event sources
 - Uses `adaptCoreWorldState()` to convert Core WorldState to CLI format
 - Auto-discovers servers via `discoverServers()`
 
@@ -133,10 +134,10 @@ The CLI includes comprehensive error handling:
 ### Session Data Flow
 
 ```
-OpenCode Backend → SSE Events → WorldStore → render() → Terminal
+OpenCode Backend → SSE Events → Merged Stream → WorldStore → render() → Terminal
 ```
 
 1. Bootstrap fetches initial data via REST API (`GET /session`, `GET /session/status`)
-2. SSE connection established for live updates
+2. SSE connection established for live updates (via unified streaming layer)
 3. `WorldStore` maintains sorted arrays with binary search updates
 4. Render loop updates terminal display via `log-update`

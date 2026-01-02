@@ -27,7 +27,7 @@ React bindings for OpenCode — a thin layer connecting Core APIs to UI componen
 
 React hooks call Core promise APIs. They never import Effect directly. All business logic lives in Core — React just binds it to the DOM.
 
-See [@opencode-vibe/core](../core/README.md) for details on the World Stream architecture.
+See [@opencode-vibe/core](../core/README.md) for details on the unified World Stream architecture (SSE + pluggable event sources).
 
 ## Install
 

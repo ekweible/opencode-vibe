@@ -39,12 +39,14 @@ Everything you need to integrate OpenCode—from push-based reactive streams to 
 │  ├── sessionsAtom, messagesAtom, partsAtom, statusAtom                      │
 │  └── worldAtom (derived, always consistent)                                 │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│  SSE LAYER                                                                  │
-│  └── MultiServerSSE → Events update atoms → Subscribers notified            │
+│  UNIFIED STREAMING LAYER (merged-stream.ts)                                 │
+│  ├── SSE events (WorldSSE)                                                  │
+│  ├── Pluggable event sources (SwarmDb, Git, etc.)                           │
+│  └── Stream.mergeAll combines sources → atoms update → subscribers notified │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**The Pattern:** SSE events flow in, atoms update, subscribers get notified. No polling. No stale data. Push-based reactivity.
+**The Pattern:** Events from multiple sources flow in, atoms update, subscribers get notified. No polling. No stale data. Push-based reactivity with pluggable sources.
 
 ---
 
@@ -253,25 +255,30 @@ Effect gives you composability, typed errors, testability, and concurrency. See 
 
 ---
 
-## SSE Event Flow
+## Event Flow (Unified Streaming)
 
 ```
-     ╔══════════════════════════════════════════════════════════════════════════╗
-     ║                     SERVER-SENT EVENTS (Real-Time)                       ║
-     ╠══════════════════════════════════════════════════════════════════════════╣
-     ║                                                                          ║
-     ║    ┌──────────┐                                   ┌──────────────┐       ║
-     ║    │ OpenCode │         SSE Stream                │  Your App    │       ║
-     ║    │  Server  │  ═══════════════════════════▶     │              │       ║
-     ║    │          │    session.created                │  WorldState  │       ║
-     ║    │  :1999   │    message.created               │  updates in  │       ║
-     ║    │          │    part.updated                   │  real-time!  │       ║
-     ║    └──────────┘    session.status                 └──────────────┘       ║
-     ║                                                                          ║
-     ╚══════════════════════════════════════════════════════════════════════════╝
+      ╔══════════════════════════════════════════════════════════════════════════╗
+      ║                     UNIFIED EVENT SOURCES (Real-Time)                    ║
+      ╠══════════════════════════════════════════════════════════════════════════╣
+      ║                                                                          ║
+      ║    ┌──────────┐                                   ┌──────────────┐       ║
+      ║    │ OpenCode │         SSE Stream                │  Your App    │       ║
+      ║    │  Server  │  ═══════════════════════════▶     │              │       ║
+      ║    │  :1999   │    session.created                │  WorldState  │       ║
+      ║    │          │    message.created               │  updates in  │       ║
+      ║    └──────────┘    part.updated                   │  real-time!  │       ║
+      ║                    session.status                 └──────────────┘       ║
+      ║                                                                          ║
+      ║    ┌──────────┐                                                          ║
+      ║    │ SwarmDb  │         Event Stream                                      ║
+      ║    │  (opt.)  │  ═══════════════════════════▶  (merged via Stream.mergeAll)
+      ║    └──────────┘                                                          ║
+      ║                                                                          ║
+      ╚══════════════════════════════════════════════════════════════════════════╝
 ```
 
-Events automatically flow to `worldAtom` via `MultiServerSSE`. No manual polling or refetching needed.
+Events automatically flow to `worldAtom` via `merged-stream.ts`. Multiple sources are combined with `Stream.mergeAll`. No manual polling or refetching needed.
 
 ---
 
@@ -304,7 +311,7 @@ const project = await sessions.list("/Users/joel/projects/myapp")
 ## Exports
 
 ```typescript
-// World Stream (primary)
+// World Stream (primary) - unified streaming with pluggable sources
 import {
   createWorldStream,
   resumeEventsDirect,
@@ -314,6 +321,7 @@ import {
   type EnrichedSession,
   type EnrichedMessage,
   type WorldStreamHandle,
+  type MergedStreamConfig,
 } from "@opencode-vibe/core/world"
 
 // Atoms (effect-atom based state)
@@ -323,6 +331,12 @@ import {
   partsAtom,
   statusAtom,
   worldAtom,
+} from "@opencode-vibe/core/world"
+
+// Event sources (for custom integrations)
+import type {
+  EventSource,
+  SourceEvent,
 } from "@opencode-vibe/core/world"
 
 // Domain types
@@ -342,10 +356,10 @@ import type {
 
 **Core owns computation, React binds UI.** This is the smart boundary pattern.
 
-- **Core Layer:** Fetching, caching, SSE connections, state computation
+- **Core Layer:** Fetching, caching, unified streaming (SSE + pluggable sources), state computation
 - **React Layer:** Subscribes to `WorldState`, renders UI, handles interactions
 
-The World Stream is THE API. React hooks in `@opencode-vibe/react` subscribe to the stream and expose it via idiomatic React patterns. CLI tools use the async iterator directly.
+The World Stream is THE API. React hooks in `@opencode-vibe/react` subscribe to the stream and expose it via idiomatic React patterns. CLI tools use the async iterator directly. The unified streaming layer (`merged-stream.ts`) combines multiple event sources (SSE, SwarmDb, etc.) into a single consistent world state.
 
 ```
 ┌─────────────────────────────────────────────┐
