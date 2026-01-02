@@ -12,6 +12,7 @@ interface AutocompleteProps {
 	onSelect: (item: string | SlashCommand) => void
 	visible?: boolean
 	isLoading?: boolean
+	error?: Error | null
 }
 
 /**
@@ -23,6 +24,7 @@ interface AutocompleteProps {
  * @param onSelect - Callback when item is clicked
  * @param visible - Whether the autocomplete should be shown
  * @param isLoading - Whether results are loading
+ * @param error - Error from search operation (takes precedence over loading/empty states)
  *
  * @returns Dropdown UI or null if not visible
  */
@@ -33,9 +35,19 @@ export function Autocomplete({
 	onSelect,
 	visible = true,
 	isLoading = false,
+	error = null,
 }: AutocompleteProps) {
 	// Don't render if not visible or no type
 	if (!visible || !type) return null
+
+	// Show error state (takes precedence over loading/empty)
+	if (error) {
+		return (
+			<div className="absolute bottom-full left-0 right-0 mb-2 bg-popover border border-border rounded-lg shadow-lg p-3 text-sm text-destructive">
+				⚠️ Search failed: {error.message}
+			</div>
+		)
+	}
 
 	// Show loading state or empty state
 	if (items.length === 0) {

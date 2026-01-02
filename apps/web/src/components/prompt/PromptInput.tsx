@@ -87,9 +87,11 @@ export function PromptInput({
 	} = usePromptStore()
 
 	// Hooks for autocomplete data
-	const { files, isLoading: isFileSearchLoading } = useFileSearch(
-		autocomplete.type === "file" ? autocomplete.query : "",
-	)
+	const {
+		files,
+		isLoading: isFileSearchLoading,
+		error: fileSearchError,
+	} = useFileSearch(autocomplete.type === "file" ? autocomplete.query : "")
 	const { getSlashCommands } = useCommands()
 
 	// Update autocomplete items when data changes
@@ -325,6 +327,7 @@ export function PromptInput({
 				selectedIndex={autocomplete.selectedIndex}
 				visible={autocomplete.visible}
 				isLoading={autocomplete.type === "file" && isFileSearchLoading}
+				error={autocomplete.type === "file" ? fileSearchError : null}
 				onSelect={(item) => {
 					// Set selected index and trigger selection
 					const index = autocomplete.items.findIndex((i) => {
