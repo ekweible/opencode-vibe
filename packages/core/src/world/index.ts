@@ -11,6 +11,7 @@
 // Main API
 export { createWorldStream } from "./stream.js"
 export type { WorldState, WorldStreamConfig, WorldStreamHandle } from "./stream.js"
+export type { SSEEventInfo } from "./types.js"
 
 // Discovery (for CLI tools that need direct access)
 export { discoverServers } from "./stream.js"
@@ -60,6 +61,7 @@ export { worldAtom } from "./derived.js"
 
 // Event sources (extensible event source pattern)
 export { createSwarmDbSource } from "./event-source.js"
+export { createSseSource } from "./sse-source.js"
 export type { EventSource, SourceEvent } from "./event-source.js"
 
 // Merged stream (combines multiple event sources)

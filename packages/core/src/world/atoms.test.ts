@@ -229,6 +229,9 @@ describe("WorldStore", () => {
 			notifyCount++
 		})
 
+		// subscribe() now fires immediately with current state
+		expect(notifyCount).toBe(1)
+
 		const sessions: Session[] = [
 			{
 				id: "ses-1",
@@ -239,10 +242,10 @@ describe("WorldStore", () => {
 		]
 
 		store.setSessions(sessions)
-		expect(notifyCount).toBe(1)
+		expect(notifyCount).toBe(2)
 
 		store.setConnectionStatus("connected")
-		expect(notifyCount).toBe(2)
+		expect(notifyCount).toBe(3)
 	})
 
 	it("unsubscribe stops notifications", () => {
@@ -253,13 +256,16 @@ describe("WorldStore", () => {
 			notifyCount++
 		})
 
-		store.setSessions([])
+		// subscribe() fires immediately with current state
 		expect(notifyCount).toBe(1)
+
+		store.setSessions([])
+		expect(notifyCount).toBe(2)
 
 		unsubscribe()
 
 		store.setSessions([])
-		expect(notifyCount).toBe(1) // No additional notifications
+		expect(notifyCount).toBe(2) // No additional notifications
 	})
 
 	it("computes context usage from last assistant message with all token types", () => {

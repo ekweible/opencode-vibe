@@ -66,6 +66,8 @@ export interface WorldState {
  * SSE event (for logging/debugging)
  */
 export interface SSEEventInfo {
+	/** Event source identifier (e.g., "sse", "swarm-db") */
+	source?: string
 	type: string
 	properties: Record<string, unknown>
 }

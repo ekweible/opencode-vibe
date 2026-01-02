@@ -16,12 +16,13 @@
  * - Graceful degradation when sources unavailable
  */
 
-import { Effect, Stream } from "effect"
+import { Effect, Stream, pipe } from "effect"
 import type { EventSource, SourceEvent } from "./event-source.js"
 import type { WorldStreamConfig, WorldStreamHandle, WorldState } from "./types.js"
 import { WorldStore } from "./atoms.js"
 import { WorldSSE } from "./sse.js"
-import { discoverServers } from "../discovery/server-discovery.js"
+import type { Message, Part, Session } from "../types/domain.js"
+import type { SessionStatus } from "../types/events.js"
 
 /**
  * Extended config for merged streams
@@ -32,6 +33,64 @@ export interface MergedStreamConfig extends WorldStreamConfig {
 	 * Each source is checked for availability before inclusion
 	 */
 	sources?: EventSource[]
+}
+
+/**
+ * Route a SourceEvent to appropriate WorldStore method
+ *
+ * Pattern: lightweight bridge between event stream and state mutations.
+ * Stateless router - WorldStore handles deduplication via binary search.
+ *
+ * From Hivemind (mem-79f347f38521edd7): SSE-to-Store Bridge Pattern
+ */
+function routeEventToStore(event: SourceEvent, store: WorldStore): void {
+	const { type, data } = event
+
+	// Type guards prevent runtime errors from malformed events
+	switch (type) {
+		case "session.created":
+		case "session.updated": {
+			const session = data as Session
+			if (session?.id) {
+				store.upsertSession(session)
+			}
+			break
+		}
+
+		case "message.created":
+		case "message.updated": {
+			const message = data as Message
+			if (message?.id) {
+				store.upsertMessage(message)
+			}
+			break
+		}
+
+		case "part.created":
+		case "part.updated": {
+			const part = data as Part
+			if (part?.id) {
+				store.upsertPart(part)
+			}
+			break
+		}
+
+		case "session.status": {
+			const { sessionID, status } = data as {
+				sessionID?: string
+				status?: SessionStatus
+			}
+			if (sessionID && status) {
+				store.updateStatus(sessionID, status)
+			}
+			break
+		}
+
+		// Unknown event types are ignored gracefully
+		// Additional event types (memory_stored, bead_created from swarm-db) can be added here
+		default:
+			break
+	}
 }
 
 /**
@@ -76,44 +135,15 @@ export function createMergedWorldStream(config: MergedStreamConfig = {}): Merged
 
 	const store = new WorldStore()
 
-	// Create SSE instance (will be started after discovery completes)
-	let sse: WorldSSE | null = null
-
-	// If baseUrl provided, start immediately
-	if (baseUrl) {
-		sse = new WorldSSE(store, {
-			serverUrl: baseUrl,
-			autoReconnect,
-			onEvent,
-		})
-		sse.start()
-	} else {
-		// No baseUrl - run discovery first
-		store.setConnectionStatus("connecting")
-		discoverServers()
-			.then((servers) => {
-				if (servers.length === 0) {
-					// No servers found
-					store.setConnectionStatus("error")
-					return
-				}
-				// Use first server (sorted by port in discovery)
-				const firstServer = servers[0]
-				const discoveredUrl = `http://127.0.0.1:${firstServer.port}`
-
-				// Create and start SSE with discovered URL
-				sse = new WorldSSE(store, {
-					serverUrl: discoveredUrl,
-					autoReconnect,
-					onEvent,
-				})
-				sse.start()
-			})
-			.catch(() => {
-				// Discovery failed
-				store.setConnectionStatus("error")
-			})
-	}
+	// Create WorldSSE instance
+	// If baseUrl provided, connect to that specific server
+	// Otherwise, let WorldSSE use its built-in discovery loop to find and connect to ALL servers
+	const sse = new WorldSSE(store, {
+		serverUrl: baseUrl, // undefined = use discovery loop for all servers
+		autoReconnect,
+		onEvent,
+	})
+	sse.start()
 
 	/**
 	 * Create merged event stream from all available sources
@@ -212,6 +242,46 @@ export function createMergedWorldStream(config: MergedStreamConfig = {}): Merged
 	 */
 	async function dispose(): Promise<void> {
 		sse?.stop()
+	}
+
+	// Start event consumer for additional sources (swarm-db, etc.)
+	// SSE is handled separately by WorldSSE for backward compatibility
+	// Consumer runs in background and routes events to WorldStore
+	if (sources.length > 0) {
+		const consumerEffect = pipe(
+			stream(),
+			Stream.runForEach((event) =>
+				Effect.sync(() => {
+					routeEventToStore(event, store)
+
+					// Call onEvent callback for all source events (not just SSE)
+					if (onEvent) {
+						// Convert SourceEvent to SSEEventInfo format
+						// Extract properties from data (assuming data is an object)
+						const properties =
+							typeof event.data === "object" && event.data !== null
+								? (event.data as Record<string, unknown>)
+								: { raw: event.data }
+
+						onEvent({
+							type: event.type,
+							properties: {
+								...properties,
+								source: event.source, // Include source tag for CLI display
+							},
+						})
+					}
+				}),
+			),
+			// Catch all errors to prevent consumer from crashing
+			Effect.catchAll(() => Effect.void),
+		)
+
+		// Run consumer in background (fire and forget)
+		Effect.runPromise(consumerEffect).catch(() => {
+			// Consumer errors are logged but don't crash the stream
+			// This allows graceful degradation if sources fail
+		})
 	}
 
 	return {

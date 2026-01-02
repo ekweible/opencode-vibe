@@ -1,16 +1,26 @@
 /**
  * Watch command - live event stream with cursor resumption
  *
- * Streams events in real-time using createWorldStream from core.
+ * Streams events in real-time using createMergedWorldStream from core.
+ * Auto-detects swarm.db at ~/.config/swarm-tools/swarm.db and merges with SSE.
  * Uses atom-based WorldStore for reactive state management.
  *
  * Usage:
- *   swarm-cli watch                           # Watch from now
+ *   swarm-cli watch                           # Watch from now (SSE + auto-detected swarm.db)
  *   swarm-cli watch --cursor-file .cursor     # Persist cursor
+ *   swarm-cli watch --sources /path/to/db     # Additional swarm.db sources
  *   swarm-cli watch --json                    # NDJSON output
  */
 
-import { createWorldStream } from "@opencode-vibe/core/world"
+import {
+	createMergedWorldStream,
+	createSwarmDbSource,
+	type EventSource,
+	type SSEEventInfo,
+} from "@opencode-vibe/core/world"
+import { existsSync } from "node:fs"
+import os from "node:os"
+import path from "node:path"
 import type { CommandContext } from "./index.js"
 import {
 	write,
@@ -19,12 +29,12 @@ import {
 	withLinks,
 	formatNextSteps,
 	formatSSEEvent,
-	type SSEEventInfo,
 } from "../output.js"
-import { adaptCoreWorldState, formatWorldState } from "../world-state.js"
+import { formatWorldState, type ProjectState } from "../world-state.js"
 
 interface WatchOptions {
 	cursorFile?: string // Persist cursor after each event
+	sources?: string[] // Additional swarm.db source paths
 }
 
 /**
@@ -40,6 +50,15 @@ function parseArgs(args: string[]): WatchOptions {
 			case "--cursor-file":
 				options.cursorFile = args[++i]
 				break
+			case "--sources": {
+				// Parse comma-separated list of paths
+				i++
+				const sourcesArg = args[i]
+				if (sourcesArg) {
+					options.sources = sourcesArg.split(",").map((p) => p.trim())
+				}
+				break
+			}
 			case "--help":
 			case "-h":
 				showHelp()
@@ -60,12 +79,14 @@ function showHelp(): void {
 ╚═════════════════════════════════════════╝
 
 Stream world state in real-time using atom-based reactive state.
+Auto-detects swarm.db at ~/.config/swarm-tools/swarm.db.
 
 Usage:
   swarm-cli watch [options]
 
 Options:
   --cursor-file <path>   Persist cursor after each update
+  --sources <paths>      Comma-separated additional swarm.db paths
   --json                 NDJSON output (machine-readable)
   --help, -h             Show this message
 
@@ -74,10 +95,13 @@ SIGINT Handling:
 
 Examples:
   swarm-cli watch --cursor-file .cursor --json
-  swarm-cli watch                    # Watch from now
+  swarm-cli watch --sources /custom/swarm.db
+  swarm-cli watch --sources /path1/swarm.db,/path2/swarm.db
+  swarm-cli watch                    # Watch from now (auto-detect)
 
 Output:
-  Shows aggregated world state, refreshed on each SSE event.
+  Shows aggregated world state from SSE and swarm.db sources.
+  Events are tagged with [sse] or [swarm-db] source identifiers.
 `)
 }
 
@@ -93,7 +117,7 @@ export async function run(context: CommandContext): Promise<void> {
 
 	// Setup graceful shutdown
 	let running = true
-	let stream: ReturnType<typeof createWorldStream> | null = null
+	let stream: ReturnType<typeof createMergedWorldStream> | null = null
 
 	process.on("SIGINT", async () => {
 		running = false
@@ -115,8 +139,27 @@ export async function run(context: CommandContext): Promise<void> {
 		const eventLog: string[] = []
 		const MAX_EVENTS = 10
 
-		// Create world stream with event callback
-		stream = createWorldStream({
+		// Build sources array
+		const sources: EventSource[] = []
+
+		// Auto-detect swarm.db at default location
+		const defaultSwarmDbPath = path.join(os.homedir(), ".config", "swarm-tools", "swarm.db")
+		if (existsSync(defaultSwarmDbPath)) {
+			sources.push(createSwarmDbSource(defaultSwarmDbPath))
+		}
+
+		// Add additional sources from --sources flag
+		if (options.sources) {
+			for (const sourcePath of options.sources) {
+				if (existsSync(sourcePath)) {
+					sources.push(createSwarmDbSource(sourcePath))
+				}
+			}
+		}
+
+		// Create merged world stream with event callback
+		stream = createMergedWorldStream({
+			sources,
 			onEvent: (event: SSEEventInfo) => {
 				const formatted = formatSSEEvent(event)
 				eventLog.push(formatted)
@@ -131,27 +174,44 @@ export async function run(context: CommandContext): Promise<void> {
 		let lastWorldUpdate = 0
 		const WORLD_UPDATE_INTERVAL = 500 // Update world view at most every 500ms
 
-		// Subscribe to world state changes
-		const unsubscribe = stream.subscribe((coreState) => {
+		// Subscribe to world state changes (fires immediately with current state)
+		const unsubscribe = stream.subscribe((world) => {
 			if (!running) return
 
-			updateCount++
 			const now = Date.now()
 
 			// Throttle updates to avoid flickering
-			if (now - lastWorldUpdate < WORLD_UPDATE_INTERVAL) {
-				return
+			// Use time-based throttling only - no blocking after N updates
+			const shouldDisplay = now - lastWorldUpdate >= WORLD_UPDATE_INTERVAL
+
+			if (!shouldDisplay) {
+				return // Skip this update (rate-limited)
 			}
+
+			updateCount++
 			lastWorldUpdate = now
 
-			const world = adaptCoreWorldState(coreState)
-
 			if (output.mode === "json") {
+				// Convert byDirectory to projects array for JSON output
+				const projects: ProjectState[] = []
+				for (const [directory, sessions] of world.byDirectory) {
+					const sortedSessions = [...sessions].sort((a, b) => b.lastActivityAt - a.lastActivityAt)
+					projects.push({
+						directory,
+						sessions: sortedSessions,
+						activeCount: sortedSessions.filter((s) => s.isActive).length,
+						totalMessages: sortedSessions.reduce((sum, s) => sum + s.messages.length, 0),
+						lastActivityAt: Math.max(...sortedSessions.map((s) => s.lastActivityAt)),
+					})
+				}
+
 				const worldWithLinks = withLinks(
 					{
-						...world,
 						updateCount,
-						projects: world.projects.map((p) => ({
+						totalSessions: world.stats.total,
+						activeSessions: world.stats.active,
+						streamingSessions: world.stats.streaming,
+						projects: projects.map((p) => ({
 							directory: p.directory,
 							sessionCount: p.sessions.length,
 							activeCount: p.activeCount,
@@ -189,8 +249,7 @@ export async function run(context: CommandContext): Promise<void> {
 		})
 
 		// Show initial state
-		const initialState = await stream.getSnapshot()
-		const initialWorld = adaptCoreWorldState(initialState)
+		const initialWorld = await stream.getSnapshot()
 
 		if (output.mode === "pretty") {
 			console.log(formatWorldState(initialWorld))

@@ -285,4 +285,309 @@ describe("createMergedWorldStream", () => {
 			await stream.dispose()
 		})
 	})
+
+	describe("event consumer (route to WorldStore)", () => {
+		it("routes session.created events to store", async () => {
+			const now = Date.now()
+			const source = createMockSource("test-source", [
+				{
+					type: "session.created",
+					data: {
+						id: "sess-001",
+						title: "Test Session",
+						directory: "/test",
+						time: { created: now, updated: now },
+					},
+					timestamp: now,
+				},
+			])
+
+			const stream = createMergedWorldStream({ sources: [source] })
+
+			// Wait for session to appear in store via subscription
+			await new Promise<void>((resolve) => {
+				const unsubscribe = stream.subscribe((state) => {
+					if (state.sessions.find((s) => s.id === "sess-001")) {
+						unsubscribe()
+						resolve()
+					}
+				})
+				// Fallback timeout
+				setTimeout(() => {
+					unsubscribe()
+					resolve()
+				}, 1000)
+			})
+
+			const state = await stream.getSnapshot()
+			const session = state.sessions.find((s) => s.id === "sess-001")
+			expect(session).toBeDefined()
+			expect(session?.directory).toBe("/test")
+
+			await stream.dispose()
+		})
+
+		it("routes session.updated events to store", async () => {
+			const now = Date.now()
+			const source = createMockSource("test-source", [
+				{
+					type: "session.created",
+					data: {
+						id: "sess-002",
+						title: "Test Session",
+						directory: "/test",
+						time: { created: now, updated: now },
+					},
+					timestamp: now,
+				},
+				{
+					type: "session.updated",
+					data: {
+						id: "sess-002",
+						title: "Test Session Updated",
+						directory: "/updated",
+						time: { created: now, updated: now + 10 },
+					},
+					timestamp: now + 10,
+				},
+			])
+
+			const stream = createMergedWorldStream({ sources: [source] })
+
+			// Wait for updated session to appear
+			await new Promise<void>((resolve) => {
+				const unsubscribe = stream.subscribe((state) => {
+					const sess = state.sessions.find((s) => s.id === "sess-002")
+					if (sess?.directory === "/updated") {
+						unsubscribe()
+						resolve()
+					}
+				})
+				setTimeout(() => {
+					unsubscribe()
+					resolve()
+				}, 1000)
+			})
+
+			const state = await stream.getSnapshot()
+			const session = state.sessions.find((s) => s.id === "sess-002")
+			expect(session).toBeDefined()
+			expect(session?.directory).toBe("/updated")
+
+			await stream.dispose()
+		})
+
+		it("handles unknown event types gracefully", async () => {
+			const now = Date.now()
+			const source = createMockSource("test-source", [
+				{
+					type: "unknown.event.type",
+					data: { foo: "bar" },
+					timestamp: now,
+				},
+				{
+					type: "session.created",
+					data: {
+						id: "sess-004",
+						title: "Test Session",
+						directory: "/test",
+						time: { created: now, updated: now },
+					},
+					timestamp: now + 10,
+				},
+			])
+
+			const stream = createMergedWorldStream({ sources: [source] })
+
+			// Wait for session to appear
+			await new Promise<void>((resolve) => {
+				const unsubscribe = stream.subscribe((state) => {
+					if (state.sessions.find((s) => s.id === "sess-004")) {
+						unsubscribe()
+						resolve()
+					}
+				})
+				setTimeout(() => {
+					unsubscribe()
+					resolve()
+				}, 1000)
+			})
+
+			const state = await stream.getSnapshot()
+			// Should have the session (unknown event ignored)
+			const session = state.sessions.find((s) => s.id === "sess-004")
+			expect(session).toBeDefined()
+
+			await stream.dispose()
+		})
+
+		it("handles malformed event data gracefully", async () => {
+			const now = Date.now()
+			const source = createMockSource("test-source", [
+				{
+					type: "session.created",
+					data: null, // Invalid data
+					timestamp: now,
+				},
+				{
+					type: "session.created",
+					data: {
+						id: "sess-005",
+						title: "Test Session",
+						directory: "/test",
+						time: { created: now, updated: now },
+					},
+					timestamp: now + 10,
+				},
+			])
+
+			const stream = createMergedWorldStream({ sources: [source] })
+
+			// Wait for valid session to appear
+			await new Promise<void>((resolve) => {
+				const unsubscribe = stream.subscribe((state) => {
+					if (state.sessions.find((s) => s.id === "sess-005")) {
+						unsubscribe()
+						resolve()
+					}
+				})
+				setTimeout(() => {
+					unsubscribe()
+					resolve()
+				}, 1000)
+			})
+
+			const state = await stream.getSnapshot()
+			// Should have the valid session
+			const session = state.sessions.find((s) => s.id === "sess-005")
+			expect(session).toBeDefined()
+
+			await stream.dispose()
+		})
+
+		it("processes events from multiple sources concurrently", async () => {
+			const now = Date.now()
+			const source1 = createMockSource("source1", [
+				{
+					type: "session.created",
+					data: {
+						id: "sess-from-1",
+						title: "From Source 1",
+						directory: "/test1",
+						time: { created: now, updated: now },
+					},
+					timestamp: now,
+				},
+			])
+
+			const source2 = createMockSource("source2", [
+				{
+					type: "session.created",
+					data: {
+						id: "sess-from-2",
+						title: "From Source 2",
+						directory: "/test2",
+						time: { created: now, updated: now },
+					},
+					timestamp: now,
+				},
+			])
+
+			const stream = createMergedWorldStream({
+				sources: [source1, source2],
+			})
+
+			// Wait for both sessions to appear
+			await new Promise<void>((resolve) => {
+				const unsubscribe = stream.subscribe((state) => {
+					const sess1 = state.sessions.find((s) => s.id === "sess-from-1")
+					const sess2 = state.sessions.find((s) => s.id === "sess-from-2")
+					if (sess1 && sess2) {
+						unsubscribe()
+						resolve()
+					}
+				})
+				setTimeout(() => {
+					unsubscribe()
+					resolve()
+				}, 1000)
+			})
+
+			const state = await stream.getSnapshot()
+			const sess1 = state.sessions.find((s) => s.id === "sess-from-1")
+			const sess2 = state.sessions.find((s) => s.id === "sess-from-2")
+			expect(sess1).toBeDefined()
+			expect(sess2).toBeDefined()
+
+			await stream.dispose()
+		})
+	})
+
+	describe("discovery race condition - watch command symptom", () => {
+		it("shows 'connecting' status immediately, then updates after discovery", async () => {
+			// RED TEST: Reproduces watch command behavior
+			// User sees: "Connected! Watching..." but Sessions: 0 forever
+			//
+			// Root cause hypothesis: Discovery works, but either:
+			// 1. No servers found (discovery returns empty array)
+			// 2. Bootstrap fails silently
+			// 3. Subscribe callback throttling prevents updates from showing
+
+			const states: string[] = []
+			const sessionCounts: number[] = []
+
+			// Simulate watch.ts behavior
+			const stream = createMergedWorldStream({
+				// No baseUrl - triggers discovery like watch command
+			})
+
+			// Subscribe BEFORE getSnapshot (like watch.ts lines 178, 248)
+			const unsubscribe = stream.subscribe((world) => {
+				states.push(world.connectionStatus)
+				sessionCounts.push(world.stats.total)
+			})
+
+			// Get initial snapshot (like watch.ts line 248)
+			const initialSnapshot = await stream.getSnapshot()
+
+			// Initial snapshot should show "connecting" with 0 sessions
+			// This is CORRECT - discovery hasn't completed yet
+			expect(initialSnapshot.connectionStatus).toBe("connecting")
+			expect(initialSnapshot.stats.total).toBe(0)
+
+			// With the fix, subscribe() fires immediately with current state
+			// So states[0] should be the initial state (after setConnectionStatus("connecting"))
+			expect(states[0]).toBe("connecting")
+			expect(sessionCounts[0]).toBe(0)
+
+			// The key fix: subscriber receives state immediately
+			// Now watch.ts display will update as soon as subscription is active
+
+			unsubscribe()
+			await stream.dispose()
+		})
+
+		it("subscribe callback fires immediately with current state", async () => {
+			// RED TEST: This is the actual fix we need
+			// Current behavior: subscribe() only fires on CHANGES
+			// Expected behavior: subscribe() fires IMMEDIATELY with current state,
+			// then on each change (like React useState pattern)
+
+			let callbackCount = 0
+			const stream = createMergedWorldStream({})
+
+			stream.subscribe(() => {
+				callbackCount++
+			})
+
+			// Wait a tick for synchronous execution
+			await new Promise((resolve) => setTimeout(resolve, 0))
+
+			// BUG: callbackCount will be 0 (or 1 if "connecting" triggered it)
+			// Expected: callbackCount should be 1 (initial state)
+			expect(callbackCount).toBeGreaterThanOrEqual(1)
+
+			await stream.dispose()
+		})
+	})
 })

@@ -8,7 +8,7 @@
 import { createWorldStream } from "@opencode-vibe/core/world"
 import type { CommandContext } from "./index.js"
 import { write, withLinks } from "../output.js"
-import { adaptCoreWorldState, formatWorldState } from "../world-state.js"
+import { formatWorldState, type ProjectState } from "../world-state.js"
 
 export async function run(context: CommandContext): Promise<void> {
 	const { output } = context
@@ -25,11 +25,10 @@ export async function run(context: CommandContext): Promise<void> {
 		await new Promise((resolve) => setTimeout(resolve, 1000))
 
 		// Get snapshot
-		const coreState = await stream.getSnapshot()
-		const world = adaptCoreWorldState(coreState)
+		const world = await stream.getSnapshot()
 
 		// Check if we found any sessions
-		if (world.totalSessions === 0) {
+		if (world.stats.total === 0) {
 			if (output.mode === "json") {
 				const data = withLinks(
 					{ servers: 0, discovered: [], world: null },
@@ -51,11 +50,24 @@ export async function run(context: CommandContext): Promise<void> {
 		}
 
 		if (output.mode === "json") {
+			// Convert byDirectory to projects array for JSON output
+			const projects: ProjectState[] = []
+			for (const [directory, sessions] of world.byDirectory) {
+				const sortedSessions = [...sessions].sort((a, b) => b.lastActivityAt - a.lastActivityAt)
+				projects.push({
+					directory,
+					sessions: sortedSessions,
+					activeCount: sortedSessions.filter((s) => s.isActive).length,
+					totalMessages: sortedSessions.reduce((sum, s) => sum + s.messages.length, 0),
+					lastActivityAt: Math.max(...sortedSessions.map((s) => s.lastActivityAt)),
+				})
+			}
+
 			const data = withLinks(
 				{
-					servers: world.projects.length,
+					servers: world.byDirectory.size,
 					world: {
-						projects: world.projects.map((p) => ({
+						projects: projects.map((p) => ({
 							directory: p.directory,
 							sessionCount: p.sessions.length,
 							activeCount: p.activeCount,
@@ -63,14 +75,13 @@ export async function run(context: CommandContext): Promise<void> {
 							sessions: p.sessions.slice(0, 5).map((s) => ({
 								id: s.id,
 								status: s.status,
-								messageCount: s.messageCount,
-								isStreaming: s.isStreaming,
+								messageCount: s.messages.length,
+								isStreaming: s.messages.some((m) => m.isStreaming),
 							})),
 						})),
-						totalSessions: world.totalSessions,
-						activeSessions: world.activeSessions,
-						streamingSessions: world.streamingSessions,
-						lastEventOffset: world.lastEventOffset,
+						totalSessions: world.stats.total,
+						activeSessions: world.stats.active,
+						streamingSessions: world.stats.streaming,
 					},
 				},
 				{

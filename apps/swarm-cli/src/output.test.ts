@@ -76,9 +76,11 @@ describe("formatSSEEvent", () => {
 		}
 
 		const result = formatSSEEvent(event)
-		// Extract the event type portion (after timestamp)
+		// Format: "[sse] HH:MM:SS session.status    ses_abc"
+		// Extract the event type portion (after source tag and timestamp)
 		const parts = result.split(/\s+/)
-		const eventType = parts[1]
+		// parts[0] = "[sse]", parts[1] = "HH:MM:SS", parts[2] = "session.status"
+		const eventType = parts[2]
 		expect(eventType).toBe("session.status")
 		// Verify padding by checking the space after
 		const afterEventType = result.indexOf("ses_abc")
