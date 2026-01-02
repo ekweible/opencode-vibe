@@ -1,43 +1,53 @@
 /**
  * Tests for world stream
+ *
+ * Tests the self-contained createWorldStream API that handles
+ * discovery and SSE connections internally.
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { createWorldStream } from "./stream.js"
-import type { GlobalEvent, SessionStatus } from "../types/events.js"
-import type { Message, Part, Session } from "../types/domain.js"
-import { createClient } from "../client/index.js"
-import { Effect, Stream, Schema as S, Option } from "effect"
-import { EventOffset } from "./cursor.js"
+import { WorldStore } from "./atoms.js"
 
-// Mock the SDK client (used by stream.ts bootstrap)
-vi.mock("@opencode-ai/sdk/client", () => ({
-	createOpencodeClient: vi.fn(() => ({
-		session: {
-			list: vi.fn(() => Promise.resolve({ data: [] })),
-			status: vi.fn(() => Promise.resolve({ data: {} })),
+// Mock discovery module
+const mockDiscoverServers = vi.fn()
+vi.mock("../discovery/server-discovery.js", () => ({
+	discoverServers: mockDiscoverServers,
+}))
+
+// Mock the WorldSSE class
+vi.mock("./sse.js", () => {
+	return {
+		WorldSSE: class MockWorldSSE {
+			private store: any
+			private config: any
+			constructor(store: any, config: any) {
+				this.store = store
+				this.config = config
+			}
+			start() {
+				// Simulate bootstrap completing
+				this.store.setConnectionStatus("connected")
+			}
+			stop() {
+				this.store.setConnectionStatus("disconnected")
+			}
+			getConnectedPorts() {
+				return []
+			}
 		},
-	})),
-}))
-
-// Mock MultiServerSSE
-vi.mock("../sse/multi-server-sse.js", () => ({
-	MultiServerSSE: vi.fn(function () {
-		return {
-			start: vi.fn(),
-			stop: vi.fn(),
-			onEvent: vi.fn(),
-			getDiscoveredServers: vi.fn(() => []),
-		}
-	}),
-}))
+		discoverServers: vi.fn(),
+		connectToSSE: vi.fn(),
+		createWorldSSE: vi.fn(),
+	}
+})
 
 describe("createWorldStream", () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
 	})
 
-	it("creates a stream handle with all methods", () => {
+	it("creates a stream handle with all methods", async () => {
 		const stream = createWorldStream({ baseUrl: "http://localhost:1999" })
 
 		expect(typeof stream.subscribe).toBe("function")
@@ -46,274 +56,237 @@ describe("createWorldStream", () => {
 		expect(typeof stream.dispose).toBe("function")
 
 		// Clean up
-		stream.dispose()
+		await stream.dispose()
 	})
 
-	describe("bootstrap", () => {
-		it("fetches sessions and status on connect", async () => {
-			// This test verifies bootstrap flow - the mock at module level handles the client
-			const stream = createWorldStream({ baseUrl: "http://localhost:1999" })
+	describe("auto-discovery", () => {
+		it("discovers and uses first server when no baseUrl provided", async () => {
+			// Mock discovery returning servers
+			mockDiscoverServers.mockResolvedValue([
+				{ port: 4056, pid: 1234, directory: "/test/dir" },
+				{ port: 5000, pid: 5678, directory: "/other/dir" },
+			])
 
-			// Wait for bootstrap to complete
-			await new Promise((resolve) => setTimeout(resolve, 50))
+			const stream = createWorldStream()
+
+			// Discovery should have been called
+			expect(mockDiscoverServers).toHaveBeenCalledOnce()
+
+			await stream.dispose()
+		})
+
+		it("uses explicit baseUrl when provided (skips discovery)", async () => {
+			const stream = createWorldStream({ baseUrl: "http://localhost:3000" })
+
+			// Discovery should NOT have been called
+			expect(mockDiscoverServers).not.toHaveBeenCalled()
+
+			await stream.dispose()
+		})
+
+		it("sets error status when no servers found", async () => {
+			// Mock discovery returning empty array
+			mockDiscoverServers.mockResolvedValue([])
+
+			const stream = createWorldStream()
+
+			// Wait for discovery to complete
+			await new Promise((resolve) => setTimeout(resolve, 10))
 
 			const snapshot = await stream.getSnapshot()
-
-			// Verify connection status after bootstrap
-			expect(snapshot.connectionStatus).toBe("connected")
-			// Sessions array should exist (empty from default mock)
-			expect(snapshot.sessions).toBeDefined()
+			expect(snapshot.connectionStatus).toBe("error")
 
 			await stream.dispose()
 		})
 
-		it("sets connectionStatus to connecting then connected", async () => {
+		it("sets error status when discovery fails", async () => {
+			// Mock discovery throwing error
+			mockDiscoverServers.mockRejectedValue(new Error("Discovery failed"))
+
 			const stream = createWorldStream()
 
-			// Initial state should be connecting
-			const initial = await stream.getSnapshot()
-			expect(initial.connectionStatus).toBe("connecting")
-
-			// After bootstrap, should be connected
-			await new Promise((resolve) => setTimeout(resolve, 50))
-			const connected = await stream.getSnapshot()
-			expect(connected.connectionStatus).toBe("connected")
-
-			await stream.dispose()
-		})
-
-		it("handles empty bootstrap data", async () => {
-			// Default mock returns empty data - test verifies graceful handling
-			const stream = createWorldStream()
-
+			// Wait for discovery to complete
 			await new Promise((resolve) => setTimeout(resolve, 10))
+
+			const snapshot = await stream.getSnapshot()
+			expect(snapshot.connectionStatus).toBe("error")
+
+			await stream.dispose()
+		})
+	})
+
+	describe("getSnapshot", () => {
+		it("returns current world state", async () => {
+			// Use explicit baseUrl to avoid discovery
+			const stream = createWorldStream({ baseUrl: "http://localhost:1999" })
 			const snapshot = await stream.getSnapshot()
 
 			expect(snapshot.sessions).toEqual([])
+			expect(snapshot.activeSessionCount).toBe(0)
+			expect(snapshot.connectionStatus).toBeDefined()
+
+			await stream.dispose()
+		})
+
+		it("returns connected status after start", async () => {
+			// Mock discovery for auto-discovery path
+			mockDiscoverServers.mockResolvedValue([{ port: 4056, pid: 1234, directory: "/test/dir" }])
+
+			const stream = createWorldStream()
+
+			// Wait for mock to set connected status
+			await new Promise((resolve) => setTimeout(resolve, 10))
+
+			const snapshot = await stream.getSnapshot()
 			expect(snapshot.connectionStatus).toBe("connected")
 
 			await stream.dispose()
 		})
 	})
 
-	describe("SSE event wiring", () => {
-		it("wires session.created to upsertSession", async () => {
-			const stream = createWorldStream()
-			const snapshot = await stream.getSnapshot()
+	describe("subscribe", () => {
+		it("receives updates when state changes", async () => {
+			// Use explicit baseUrl to avoid discovery
+			const stream = createWorldStream({ baseUrl: "http://localhost:1999" })
+			const updates: any[] = []
 
-			// Simulate SSE event
-			const event: GlobalEvent = {
-				directory: "/test",
-				payload: {
-					type: "session.created",
-					properties: {
-						id: "ses_new",
-						title: "New Session",
-						directory: "/test",
-						time: { created: 3000, updated: 3000 },
-					},
-				},
-			}
+			const unsubscribe = stream.subscribe((state) => {
+				updates.push(state)
+			})
 
-			// Manually trigger event handler (in real impl, SSE would call this)
-			// For now, just verify store method exists
-			expect(snapshot).toBeDefined()
+			// Wait a bit for initial connection
+			await new Promise((resolve) => setTimeout(resolve, 10))
 
+			expect(updates.length).toBeGreaterThanOrEqual(0)
+
+			unsubscribe()
 			await stream.dispose()
 		})
 
-		it("wires session.updated to upsertSession", async () => {
-			const stream = createWorldStream()
-			await stream.getSnapshot()
+		it("returns unsubscribe function", async () => {
+			// Use explicit baseUrl to avoid discovery
+			const stream = createWorldStream({ baseUrl: "http://localhost:1999" })
+			const callback = vi.fn()
 
-			// Test will verify event handler calls store.upsertSession
-			await stream.dispose()
-		})
+			const unsubscribe = stream.subscribe(callback)
+			expect(typeof unsubscribe).toBe("function")
 
-		it("wires session.status to updateStatus", async () => {
-			const stream = createWorldStream()
-			await stream.getSnapshot()
-
-			// Test will verify event handler calls store.updateStatus
-			await stream.dispose()
-		})
-
-		it("wires message.created to upsertMessage", async () => {
-			const stream = createWorldStream()
-			await stream.getSnapshot()
-
-			// Test will verify event handler calls store.upsertMessage
-			await stream.dispose()
-		})
-
-		it("wires message.updated to upsertMessage with tokens", async () => {
-			const stream = createWorldStream()
-			await stream.getSnapshot()
-
-			// Test will verify tokens are extracted
-			await stream.dispose()
-		})
-
-		it("wires part.created to upsertPart", async () => {
-			const stream = createWorldStream()
-			await stream.getSnapshot()
-
-			// Test will verify event handler calls store.upsertPart
-			await stream.dispose()
-		})
-
-		it("wires part.updated to upsertPart", async () => {
-			const stream = createWorldStream()
-			await stream.getSnapshot()
-
-			// Test will verify event handler calls store.upsertPart
+			unsubscribe()
 			await stream.dispose()
 		})
 	})
 
-	it("getSnapshot returns current world state", async () => {
-		const stream = createWorldStream()
-		const snapshot = await stream.getSnapshot()
+	describe("async iterator", () => {
+		it("yields initial world state", async () => {
+			// Use explicit baseUrl to avoid discovery
+			const stream = createWorldStream({ baseUrl: "http://localhost:1999" })
+			const iterator = stream[Symbol.asyncIterator]()
 
-		expect(snapshot.sessions).toEqual([])
-		expect(snapshot.activeSessionCount).toBe(0)
-		expect(snapshot.connectionStatus).toBeDefined()
+			// Get first value
+			const first = await iterator.next()
 
-		await stream.dispose()
-	})
+			expect(first.done).toBe(false)
+			expect(first.value.sessions).toBeDefined()
+			expect(first.value.activeSessionCount).toBe(0)
 
-	it("subscribe receives updates", async () => {
-		const stream = createWorldStream()
-		const updates: any[] = []
-
-		const unsubscribe = stream.subscribe((state) => {
-			updates.push(state)
+			await stream.dispose()
 		})
-
-		// Wait a bit for initial connection
-		await new Promise((resolve) => setTimeout(resolve, 10))
-
-		expect(updates.length).toBeGreaterThanOrEqual(0)
-
-		unsubscribe()
-		await stream.dispose()
 	})
 
-	it("async iterator yields initial world state", async () => {
-		const stream = createWorldStream()
-		const iterator = stream[Symbol.asyncIterator]()
+	describe("dispose", () => {
+		it("cleans up resources", async () => {
+			// Use explicit baseUrl to avoid discovery
+			const stream = createWorldStream({ baseUrl: "http://localhost:1999" })
 
-		// Get first value
-		const first = await iterator.next()
+			// Wait for bootstrap to complete
+			await new Promise((resolve) => setTimeout(resolve, 10))
 
-		expect(first.done).toBe(false)
-		expect(first.value.sessions).toBeDefined()
-		expect(first.value.activeSessionCount).toBe(0)
+			// Get initial snapshot
+			const before = await stream.getSnapshot()
+			expect(before.connectionStatus).toBe("connected")
 
-		await stream.dispose()
-	})
+			// Dispose
+			await stream.dispose()
 
-	it("dispose cleans up resources", async () => {
-		const stream = createWorldStream()
-
-		// Wait for bootstrap to complete
-		await new Promise((resolve) => setTimeout(resolve, 50))
-
-		// Get initial snapshot
-		const before = await stream.getSnapshot()
-		expect(before.connectionStatus).toBe("connected")
-
-		// Dispose
-		await stream.dispose()
-
-		// Connection should be disconnected immediately
-		const after = await stream.getSnapshot()
-		expect(after.connectionStatus).toBe("disconnected")
+			// Connection should be disconnected
+			const after = await stream.getSnapshot()
+			expect(after.connectionStatus).toBe("disconnected")
+		})
 	})
 })
 
-describe("Effect Stream API", () => {
-	describe("catchUpEvents", () => {
-		it("returns bounded history of events", async () => {
-			const { catchUpEvents } = await import("./stream.js")
+// Helper to create a valid session object
+function createSession(id: string, title: string = "Test Session") {
+	return {
+		id,
+		title,
+		directory: "/test",
+		time: { created: Date.now(), updated: Date.now() },
+	}
+}
 
-			// Mock implementation would provide events
-			const result = await Effect.runPromise(catchUpEvents())
+describe("WorldStore", () => {
+	it("derives enriched world state from raw data", () => {
+		const store = new WorldStore()
 
-			expect(result).toHaveProperty("events")
-			expect(result).toHaveProperty("nextOffset")
-			expect(result).toHaveProperty("upToDate")
-			expect(Array.isArray(result.events)).toBe(true)
-		})
+		// Add a session
+		store.setSessions([createSession("ses_1", "Test Session") as any])
 
-		it("returns upToDate=true when caught up", async () => {
-			const { catchUpEvents } = await import("./stream.js")
+		// Add status
+		store.setStatus({ ses_1: "running" })
 
-			const result = await Effect.runPromise(catchUpEvents())
+		const state = store.getState()
 
-			expect(result.upToDate).toBe(true)
-		})
-
-		it("accepts optional offset parameter", async () => {
-			const { catchUpEvents } = await import("./stream.js")
-
-			const offset = S.decodeSync(EventOffset)("100")
-			const result = await Effect.runPromise(catchUpEvents(offset))
-
-			expect(result).toHaveProperty("events")
-		})
-
-		it("last event includes upToDate signal", async () => {
-			const { catchUpEvents } = await import("./stream.js")
-
-			const result = await Effect.runPromise(catchUpEvents())
-
-			if (result.events.length > 0) {
-				const lastEvent = result.events[result.events.length - 1]
-				expect(lastEvent.upToDate).toBeDefined()
-			}
-		})
+		expect(state.sessions.length).toBe(1)
+		expect(state.sessions[0].id).toBe("ses_1")
+		expect(state.sessions[0].status).toBe("running")
+		expect(state.sessions[0].isActive).toBe(true)
+		expect(state.activeSessionCount).toBe(1)
 	})
 
-	describe("tailEvents", () => {
-		it("returns unbounded Stream of events", async () => {
-			const { tailEvents } = await import("./stream.js")
+	it("upserts sessions using binary search", () => {
+		const store = new WorldStore()
 
-			const stream = tailEvents()
+		// Add sessions in order
+		store.upsertSession(createSession("ses_a", "A") as any)
+		store.upsertSession(createSession("ses_c", "C") as any)
+		store.upsertSession(createSession("ses_b", "B") as any)
 
-			// Verify it's a Stream
-			expect(stream).toBeDefined()
-			expect(typeof stream.pipe).toBe("function")
-		})
-
-		it("accepts optional offset parameter", async () => {
-			const { tailEvents } = await import("./stream.js")
-
-			const offset = S.decodeSync(EventOffset)("200")
-			const stream = tailEvents(offset)
-
-			expect(stream).toBeDefined()
-			expect(typeof stream.pipe).toBe("function")
-		})
+		const state = store.getState()
+		expect(state.sessions.length).toBe(3)
 	})
 
-	describe("resumeEvents", () => {
-		it("returns Stream combining catch-up and live events", async () => {
-			const { resumeEvents } = await import("./stream.js")
+	it("updates existing session on upsert", () => {
+		const store = new WorldStore()
 
-			const stream = resumeEvents()
+		store.upsertSession(createSession("ses_1", "Original") as any)
+		store.upsertSession(createSession("ses_1", "Updated") as any)
 
-			expect(stream).toBeDefined()
-			expect(typeof stream.pipe).toBe("function")
-		})
+		const state = store.getState()
+		expect(state.sessions.length).toBe(1)
+		expect(state.sessions[0].title).toBe("Updated")
+	})
 
-		it("accepts optional savedOffset parameter", async () => {
-			const { resumeEvents } = await import("./stream.js")
+	it("notifies subscribers on state change", () => {
+		const store = new WorldStore()
+		const callback = vi.fn()
 
-			const offset = S.decodeSync(EventOffset)("300")
-			const stream = resumeEvents(offset)
+		store.subscribe(callback)
+		store.setSessions([createSession("ses_1") as any])
 
-			expect(stream).toBeDefined()
-		})
+		expect(callback).toHaveBeenCalled()
+	})
+
+	it("unsubscribe stops notifications", () => {
+		const store = new WorldStore()
+		const callback = vi.fn()
+
+		const unsubscribe = store.subscribe(callback)
+		unsubscribe()
+
+		store.setSessions([createSession("ses_1") as any])
+
+		// Callback should not have been called after unsubscribe
+		expect(callback).not.toHaveBeenCalled()
 	})
 })

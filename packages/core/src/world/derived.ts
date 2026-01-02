@@ -113,12 +113,29 @@ export const worldAtom = Atom.make((get) => {
 	const activeSession = enrichedSessions.find((s) => s.isActive) ?? enrichedSessions[0] ?? null
 	const activeSessionCount = enrichedSessions.filter((s) => s.isActive).length
 
+	// Group sessions by directory
+	const byDirectory = new Map<string, EnrichedSession[]>()
+	for (const session of enrichedSessions) {
+		const existing = byDirectory.get(session.directory) ?? []
+		existing.push(session)
+		byDirectory.set(session.directory, existing)
+	}
+
+	// Compute stats
+	const stats = {
+		total: enrichedSessions.length,
+		active: activeSessionCount,
+		streaming: enrichedSessions.filter((s) => s.messages.some((m) => m.isStreaming)).length,
+	}
+
 	const worldState: WorldState = {
 		sessions: enrichedSessions,
 		activeSessionCount,
 		activeSession,
 		connectionStatus,
 		lastUpdated: Date.now(),
+		byDirectory,
+		stats,
 	}
 
 	return worldState

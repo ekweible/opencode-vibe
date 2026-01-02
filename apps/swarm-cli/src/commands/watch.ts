@@ -12,8 +12,15 @@
 
 import { createWorldStream } from "@opencode-vibe/core/world"
 import type { CommandContext } from "./index.js"
-import { write, writeError, loadCursor, saveCursor, withLinks, formatNextSteps } from "../output.js"
-import { discoverServers } from "../discovery.js"
+import {
+	write,
+	writeError,
+	saveCursor,
+	withLinks,
+	formatNextSteps,
+	formatSSEEvent,
+	type SSEEventInfo,
+} from "../output.js"
 import { adaptCoreWorldState, formatWorldState } from "../world-state.js"
 
 interface WatchOptions {
@@ -84,21 +91,6 @@ export async function run(context: CommandContext): Promise<void> {
 	// Cursor file can come from global options OR command options
 	const cursorFile = output.cursorFile || options.cursorFile
 
-	// Discover servers
-	const servers = await discoverServers()
-
-	if (servers.length === 0) {
-		if (output.mode === "json") {
-			writeError("No servers found", { servers: 0 })
-		} else {
-			console.log("✗ No OpenCode servers found")
-			console.log("\nTo connect to a server:")
-			console.log("  1. Start OpenCode:  cd ~/project && opencode")
-			console.log("  2. Then run:        swarm-cli watch")
-		}
-		return
-	}
-
 	// Setup graceful shutdown
 	let running = true
 	let stream: ReturnType<typeof createWorldStream> | null = null
@@ -116,12 +108,23 @@ export async function run(context: CommandContext): Promise<void> {
 
 	try {
 		if (output.mode === "pretty") {
-			console.log(`Watching world state from ${servers.length} server(s)... (Ctrl+C to stop)\n`)
+			console.log("Discovering servers and connecting... (Ctrl+C to stop)\n")
 		}
 
-		// Create world stream - it bootstraps with full data and wires SSE
+		// Rolling event log buffer (last 10 events)
+		const eventLog: string[] = []
+		const MAX_EVENTS = 10
+
+		// Create world stream with event callback
 		stream = createWorldStream({
-			baseUrl: `http://127.0.0.1:${servers[0]!.port}`,
+			onEvent: (event: SSEEventInfo) => {
+				const formatted = formatSSEEvent(event)
+				eventLog.push(formatted)
+				// Keep only last 10 events
+				if (eventLog.length > MAX_EVENTS) {
+					eventLog.shift()
+				}
+			},
 		})
 
 		let updateCount = 0
@@ -165,7 +168,16 @@ export async function run(context: CommandContext): Promise<void> {
 				console.clear()
 				console.log(formatWorldState(world))
 				console.log(`\nUpdates received: ${updateCount}`)
-				console.log("Watching for changes... (Ctrl+C to stop)")
+
+				// Display recent events
+				if (eventLog.length > 0) {
+					console.log("\nRecent Events:")
+					for (const eventLine of eventLog) {
+						console.log(`  ${eventLine}`)
+					}
+				}
+
+				console.log("\nWatching for changes... (Ctrl+C to stop)")
 			}
 
 			// Persist cursor if configured

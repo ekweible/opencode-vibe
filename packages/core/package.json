@@ -23,6 +23,10 @@
 			"types": "./dist/discovery/index.d.ts",
 			"import": "./dist/discovery/index.js"
 		},
+		"./discovery/server": {
+			"types": "./dist/discovery/server.d.ts",
+			"import": "./dist/discovery/server.js"
+		},
 		"./sse": {
 			"types": "./dist/sse/index.d.ts",
 			"import": "./dist/sse/index.js"

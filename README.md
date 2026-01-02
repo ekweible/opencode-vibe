@@ -41,7 +41,8 @@ The web UI auto-discovers all running OpenCode processes. No configuration neede
 **Monorepo structure:**
 
 - **`apps/web/`** - Next.js 16 web application (App Router, RSC, Tailwind)
-- **`packages/core/`** - Framework-agnostic SDK layer (router, types, utilities)
+- **`apps/swarm-cli/`** - CLI for visualizing world state across servers
+- **`packages/core/`** - World stream, atoms, Effect services, types
 - **`packages/react/`** - React bindings (hooks, providers, store)
 - **`docs/`** - Architecture Decision Records and implementation guides
 
@@ -49,6 +50,7 @@ The web UI auto-discovers all running OpenCode processes. No configuration neede
 
 ## Features
 
+- **World stream architecture** - Push-based reactive state via `createWorldStream()`
 - **Multi-server discovery** - Finds all running OpenCode processes automatically via `lsof`
 - **Cross-process messaging** - Send from web UI, appears in your TUI
 - **Real-time streaming** - Messages stream in as the AI generates them
@@ -93,7 +95,7 @@ bun test --watch        # Watch mode
 | **Linting**    | oxlint                | Fast Rust-based linter              |
 | **Formatting** | Biome                 | Fast formatter                      |
 | **Styling**    | Tailwind CSS          | Utility-first CSS                   |
-| **State**      | Zustand               | Lightweight state management        |
+| **State**      | effect-atom           | Reactive world stream with Effect   |
 | **SDK**        | @opencode-ai/sdk      | OpenCode API client                 |
 
 ---
@@ -104,6 +106,8 @@ bun test --watch        # Watch mode
 - **`packages/core/README.md`** - Core SDK and router documentation
 - **`packages/react/README.md`** - React hooks and providers
 - **`docs/adr/`** - Architecture Decision Records
+  - ADR-016: Core Layer Responsibility (Core owns computation, React binds UI)
+  - ADR-018: Reactive World Stream (`createWorldStream()` is THE API)
 - **`docs/guides/`** - Implementation guides (SSE sync, mobile, subagents)
 - **`AGENTS.md`** - AI agent conventions and development patterns
 

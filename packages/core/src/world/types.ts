@@ -29,6 +29,18 @@ export interface EnrichedMessage extends Message {
 }
 
 /**
+ * World state statistics
+ */
+export interface WorldStats {
+	/** Total number of sessions */
+	total: number
+	/** Number of active (running) sessions */
+	active: number
+	/** Number of sessions with streaming messages */
+	streaming: number
+}
+
+/**
  * Complete world state snapshot
  */
 export interface WorldState {
@@ -37,6 +49,25 @@ export interface WorldState {
 	activeSession: EnrichedSession | null
 	connectionStatus: "connecting" | "connected" | "disconnected" | "error"
 	lastUpdated: number
+
+	/**
+	 * Sessions grouped by directory
+	 * Pre-computed to avoid adapter pattern in consumers
+	 */
+	byDirectory: Map<string, EnrichedSession[]>
+
+	/**
+	 * Pre-computed statistics
+	 */
+	stats: WorldStats
+}
+
+/**
+ * SSE event (for logging/debugging)
+ */
+export interface SSEEventInfo {
+	type: string
+	properties: Record<string, unknown>
 }
 
 /**
@@ -60,6 +91,11 @@ export interface WorldStreamConfig {
 	 * @default true
 	 */
 	autoReconnect?: boolean
+
+	/**
+	 * Callback for raw SSE events (for logging/debugging)
+	 */
+	onEvent?: (event: SSEEventInfo) => void
 }
 
 /**

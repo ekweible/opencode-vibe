@@ -59,11 +59,15 @@ describe("WorldStream Types", () => {
 			activeSession: null,
 			connectionStatus: "connected",
 			lastUpdated: Date.now(),
+			byDirectory: new Map(),
+			stats: { total: 0, active: 1, streaming: 0 },
 		}
 
 		expect(worldState.sessions).toEqual([])
 		expect(worldState.activeSessionCount).toBe(1)
 		expect(worldState.connectionStatus).toBe("connected")
+		expect(worldState.byDirectory).toBeInstanceOf(Map)
+		expect(worldState.stats.total).toBe(0)
 	})
 
 	it("WorldStreamConfig has reasonable defaults", () => {
@@ -85,6 +89,8 @@ describe("WorldStream Types", () => {
 				activeSession: null,
 				connectionStatus: "disconnected",
 				lastUpdated: Date.now(),
+				byDirectory: new Map(),
+				stats: { total: 0, active: 0, streaming: 0 },
 			}),
 			dispose: async () => {},
 		}

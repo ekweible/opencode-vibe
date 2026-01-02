@@ -14,6 +14,8 @@ describe("adaptCoreWorldState", () => {
 			activeSession: null,
 			connectionStatus: "disconnected",
 			lastUpdated: Date.now(),
+			byDirectory: new Map(),
+			stats: { total: 0, active: 0, streaming: 0 },
 		}
 
 		const cliState = adaptCoreWorldState(coreState)
@@ -69,6 +71,11 @@ describe("adaptCoreWorldState", () => {
 			activeSession: null,
 			connectionStatus: "connected",
 			lastUpdated: now,
+			byDirectory: new Map([
+				["/project-a", [] as any],
+				["/project-b", [] as any],
+			]),
+			stats: { total: 3, active: 2, streaming: 0 },
 		}
 
 		const cliState = adaptCoreWorldState(coreState)
@@ -126,6 +133,8 @@ describe("adaptCoreWorldState", () => {
 			activeSession: null,
 			connectionStatus: "connected",
 			lastUpdated: now,
+			byDirectory: new Map([["/project", [] as any]]),
+			stats: { total: 2, active: 1, streaming: 0 },
 		}
 
 		const cliState = adaptCoreWorldState(coreState)
@@ -164,6 +173,8 @@ describe("adaptCoreWorldState", () => {
 			activeSession: null,
 			connectionStatus: "connected",
 			lastUpdated: now,
+			byDirectory: new Map([["/project", [] as any]]),
+			stats: { total: 1, active: 1, streaming: 1 },
 		}
 
 		const cliState = adaptCoreWorldState(coreState)

@@ -3,30 +3,32 @@
  *
  * Exports the world stream API for consuming enriched world state
  * from SSE events. Provides both subscription and async iterator APIs.
+ *
+ * SELF-CONTAINED: Discovery and SSE connections are handled internally.
+ * No dependencies on browser APIs or proxy routes.
  */
 
-export {
-	createWorldStream,
-	catchUpEvents,
-	tailEvents,
-	resumeEvents,
-	// CLI-compatible direct server functions
-	connectToServerSSE,
-	tailEventsDirect,
-	catchUpEventsDirect,
-	resumeEventsDirect,
-} from "./stream.js"
-export type { CatchUpResponse, DiscoverServers } from "./stream.js"
+// Main API
+export { createWorldStream } from "./stream.js"
+export type { WorldState, WorldStreamConfig, WorldStreamHandle } from "./stream.js"
+
+// Discovery (for CLI tools that need direct access)
+export { discoverServers } from "./stream.js"
+export type { DiscoveredServer } from "./stream.js"
+
+// SSE internals (for advanced usage)
+export { WorldSSE, createWorldSSE, connectToSSE } from "./sse.js"
+export type { SSEEvent, WorldSSEConfig } from "./sse.js"
+
+// WorldStore (atom-based state management)
 export { WorldStore } from "./atoms.js"
+
+// SSE Bridge (for React integration)
 export { createSSEBridge } from "./sse-bridge.js"
 export type { SSEBridge } from "./sse-bridge.js"
-export type {
-	EnrichedMessage,
-	EnrichedSession,
-	WorldState,
-	WorldStreamConfig,
-	WorldStreamHandle,
-} from "./types.js"
+
+// Enriched types
+export type { EnrichedMessage, EnrichedSession } from "./types.js"
 
 // Cursor-based streaming types (Effect Schema)
 export { EventOffset, StreamCursor } from "./cursor.js"

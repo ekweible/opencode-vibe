@@ -20,7 +20,31 @@
                                     ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
 ```
 
-The OpenCode engine. Everything you need to integrate OpenCode into your application—from simple Promise-based APIs to composable Effect programs for power users.
+The OpenCode engine. **Core owns computation, React binds UI.**
+
+Everything you need to integrate OpenCode—from push-based reactive streams to simple Promise APIs.
+
+---
+
+## Architecture: World Stream (ADR-018)
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  CONSUMER APIs (No Effect Required)                                         │
+│  ├── subscribe(callback) → unsubscribe                                      │
+│  ├── getSnapshot() → Promise<WorldState>                                    │
+│  └── [Symbol.asyncIterator] → for await...of                                │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  WORLD STORE (effect-atom)                                                  │
+│  ├── sessionsAtom, messagesAtom, partsAtom, statusAtom                      │
+│  └── worldAtom (derived, always consistent)                                 │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  SSE LAYER                                                                  │
+│  └── MultiServerSSE → Events update atoms → Subscribers notified            │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+**The Pattern:** SSE events flow in, atoms update, subscribers get notified. No polling. No stale data. Push-based reactivity.
 
 ---
 
@@ -32,48 +56,116 @@ The OpenCode engine. Everything you need to integrate OpenCode into your applica
 bun add @opencode-vibe/core @opencode-ai/sdk
 ```
 
-### Your First API Call (30 seconds)
+---
 
-```typescript
-import { sessions } from "@opencode-vibe/core"
+## Three APIs: Pick Your Style
 
-// List all sessions
-const allSessions = await sessions.list()
-console.log(`Found ${allSessions.length} sessions`)
-
-// Get a specific session
-const session = await sessions.get("session-id-here")
-if (session) {
-  console.log(`Session: ${session.title}`)
-}
 ```
-
-That's it. You're talking to OpenCode.
+┌───────────────────────────────────────────────────────────────────────────────────────┐
+│                                                                                       │
+│   WORLD STREAM             PROMISE API                   EFFECT API                   │
+│   ────────────             ───────────                   ──────────                   │
+│                                                                                       │
+│   stream.subscribe(...)    await sessions.list()         SessionAtom.list().pipe(...) │
+│                                                                                       │
+│   ✓ Real-time              ✓ Simple                      ✓ Composable                 │
+│   ✓ Push-based             ✓ Familiar                    ✓ Type-safe errors           │
+│   ✓ Reactive apps          ✓ One-shot queries            ✓ Testable                   │
+│                                                                                       │
+│   Web/CLI real-time  ────► Quick scripts  ────────────►  Power users                  │
+│                                                                                       │
+└───────────────────────────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
-## Two APIs: Pick Your Style
+## World Stream API (Primary)
 
+**The recommended API for real-time applications.** Push-based reactive state via SSE.
+
+```typescript
+import { createWorldStream } from "@opencode-vibe/core/world"
+
+const stream = createWorldStream({
+  baseUrl: "http://localhost:1999",
+})
+
+// Subscribe to world updates (React, callbacks)
+const unsubscribe = stream.subscribe((world) => {
+  console.log(`${world.sessions.length} sessions`)
+  console.log(`${world.activeSessionCount} active`)
+  console.log(`Connection: ${world.connectionStatus}`)
+})
+
+// Or use async iterator (CLI/TUI)
+for await (const world of stream) {
+  render(world)
+}
+
+// Or get one-shot snapshot
+const world = await stream.getSnapshot()
+
+// Cleanup
+await stream.dispose()
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                                                                 │
-│   PROMISE API                      EFFECT API                   │
-│   ───────────                      ──────────                   │
-│                                                                 │
-│   await sessions.list()    vs     SessionAtom.list().pipe(...)  │
-│                                                                 │
-│   ✓ Simple                         ✓ Composable                 │
-│   ✓ Familiar                       ✓ Type-safe errors           │
-│   ✓ Quick start                    ✓ Testable                   │
-│                                                                 │
-│   Most users start here ───────►   Power users level up here   │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+
+### WorldState Type
+
+```typescript
+interface WorldState {
+  sessions: EnrichedSession[]      // Sessions with embedded messages, parts, status
+  activeSessionCount: number       // Count of running sessions
+  activeSession: EnrichedSession | null
+  connectionStatus: "connecting" | "connected" | "disconnected" | "error"
+  lastUpdated: number
+}
+
+interface EnrichedSession extends Session {
+  status: SessionStatus
+  isActive: boolean
+  messages: EnrichedMessage[]
+  unreadCount: number
+  contextUsagePercent: number
+  lastActivityAt: number
+}
+
+interface EnrichedMessage extends Message {
+  parts: Part[]
+  isStreaming: boolean
+}
 ```
 
-### Promise API (Default)
+### CLI/TUI Usage (Direct Server Connection)
 
-Simple, straightforward, async/await. Use this unless you have a reason not to.
+For CLI tools that need direct server connections (no proxy):
+
+```typescript
+import { resumeEventsDirect, type DiscoverServers } from "@opencode-vibe/core/world"
+import { Stream, Effect } from "effect"
+
+// Inject your own server discovery (e.g., lsof-based)
+const discoverServers: DiscoverServers = async () => [
+  { port: 4056, directory: "/path/to/project" }
+]
+
+// Durable streaming: catch-up + live events
+const eventStream = resumeEventsDirect(discoverServers)
+
+await Effect.runPromise(
+  Stream.runForEach(eventStream, (event) =>
+    Effect.sync(() => {
+      if (event.upToDate) console.log("Caught up! Now live...")
+      console.log(event.type, event.offset)
+    })
+  )
+)
+```
+
+---
+
+## Promise API (Simple)
+
+For one-shot queries and quick scripts. No Effect knowledge required.
 
 ```typescript
 import { sessions, messages, parts, providers, projects } from "@opencode-vibe/core"
@@ -101,11 +193,13 @@ const current = await projects.current()
 const serversList = await servers.list()
 ```
 
-All functions return `Promise<T>`. No Effect knowledge required.
+All functions return `Promise<T>`. Use this for scripts, tests, and simple integrations.
 
-### Effect API (Power Users)
+---
 
-Composable, testable, error handling built-in. For complex workflows.
+## Effect API (Power Users)
+
+Composable, testable, error handling built-in. For complex workflows and power users.
 
 ```typescript
 import { SessionAtom, MessageAtom } from "@opencode-vibe/core/atoms"
@@ -124,11 +218,11 @@ Effect gives you composability, typed errors, testability, and concurrency. See 
 
 ---
 
-## Data Flow
+## Data Model
 
 ```
                         ╭──────────────────────────────────────────────────────────╮
-                        │                    DATA FLOW                             │
+                        │                    DATA HIERARCHY                        │
                         ╰──────────────────────────────────────────────────────────╯
 
                                     ┌─────────────┐
@@ -159,37 +253,25 @@ Effect gives you composability, typed errors, testability, and concurrency. See 
 
 ---
 
-## Real-Time Updates with SSE
+## SSE Event Flow
 
 ```
-     ╔══════════════════════════════════════════════════════════════════╗
-     ║                     SERVER-SENT EVENTS                           ║
-     ╠══════════════════════════════════════════════════════════════════╣
-     ║                                                                  ║
-     ║    ┌──────────┐         SSE Stream          ┌──────────────┐    ║
-     ║    │ OpenCode │  ═══════════════════════▶   │  Your App    │    ║
-     ║    │  Server  │    session.created          │              │    ║
-     ║    │          │    message.added            │   Real-time  │    ║
-     ║    │  :4056   │    part.updated             │   Updates!   │    ║
-     ║    └──────────┘                             └──────────────┘    ║
-     ║                                                                  ║
-     ╚══════════════════════════════════════════════════════════════════╝
+     ╔══════════════════════════════════════════════════════════════════════════╗
+     ║                     SERVER-SENT EVENTS (Real-Time)                       ║
+     ╠══════════════════════════════════════════════════════════════════════════╣
+     ║                                                                          ║
+     ║    ┌──────────┐                                   ┌──────────────┐       ║
+     ║    │ OpenCode │         SSE Stream                │  Your App    │       ║
+     ║    │  Server  │  ═══════════════════════════▶     │              │       ║
+     ║    │          │    session.created                │  WorldState  │       ║
+     ║    │  :1999   │    message.created               │  updates in  │       ║
+     ║    │          │    part.updated                   │  real-time!  │       ║
+     ║    └──────────┘    session.status                 └──────────────┘       ║
+     ║                                                                          ║
+     ╚══════════════════════════════════════════════════════════════════════════╝
 ```
 
-```typescript
-import { sse } from "@opencode-vibe/core"
-import { Stream, Effect } from "effect"
-
-const stream = sse.connect({ url: "http://localhost:4056" })
-
-await Effect.runPromise(
-  Stream.runForEach(stream, (event) =>
-    Effect.sync(() => console.log("Event:", event.type, event.payload))
-  )
-)
-```
-
-Events: session created/updated, message added, part updated, provider changes.
+Events automatically flow to `worldAtom` via `MultiServerSSE`. No manual polling or refetching needed.
 
 ---
 
@@ -197,10 +279,14 @@ Events: session created/updated, message added, part updated, provider changes.
 
 ### Server URL
 
-Connects to `http://localhost:4056` by default. Override with:
+Connects to `http://localhost:1999` by default. Override with:
 
 ```typescript
-process.env.NEXT_PUBLIC_OPENCODE_URL = "http://my-server:4056"
+// World Stream
+const stream = createWorldStream({ baseUrl: "http://my-server:1999" })
+
+// Environment variable (Promise/Effect APIs)
+process.env.NEXT_PUBLIC_OPENCODE_URL = "http://my-server:1999"
 ```
 
 ### Directory Scoping
@@ -215,9 +301,31 @@ const project = await sessions.list("/Users/joel/projects/myapp")
 
 ---
 
-## Types
+## Exports
 
 ```typescript
+// World Stream (primary)
+import {
+  createWorldStream,
+  resumeEventsDirect,
+  catchUpEventsDirect,
+  tailEventsDirect,
+  type WorldState,
+  type EnrichedSession,
+  type EnrichedMessage,
+  type WorldStreamHandle,
+} from "@opencode-vibe/core/world"
+
+// Atoms (effect-atom based state)
+import {
+  sessionsAtom,
+  messagesAtom,
+  partsAtom,
+  statusAtom,
+  worldAtom,
+} from "@opencode-vibe/core/world"
+
+// Domain types
 import type {
   Session,
   Message,
@@ -225,8 +333,31 @@ import type {
   Provider,
   Project,
   GlobalEvent,
-  SSEConfig,
 } from "@opencode-vibe/core"
+```
+
+---
+
+## Architecture Notes (ADR-016/018)
+
+**Core owns computation, React binds UI.** This is the smart boundary pattern.
+
+- **Core Layer:** Fetching, caching, SSE connections, state computation
+- **React Layer:** Subscribes to `WorldState`, renders UI, handles interactions
+
+The World Stream is THE API. React hooks in `@opencode-vibe/react` subscribe to the stream and expose it via idiomatic React patterns. CLI tools use the async iterator directly.
+
+```
+┌─────────────────────────────────────────────┐
+│  React Layer (@opencode-vibe/react)         │
+│  └── useWorldStream() → WorldState          │
+├─────────────────────────────────────────────┤
+│  Core Layer (@opencode-vibe/core)           │  ◄── You are here
+│  └── createWorldStream() → WorldStreamHandle │
+├─────────────────────────────────────────────┤
+│  SDK Layer (@opencode-ai/sdk)               │
+│  └── HTTP client, type-safe API calls       │
+└─────────────────────────────────────────────┘
 ```
 
 ---

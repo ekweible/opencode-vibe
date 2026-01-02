@@ -16,7 +16,12 @@ Task(subagent_type="explore", description="Debug via Chrome DevTools", prompt=".
 
 **opencode-next** - Next.js 16 rebuild of OpenCode web application.
 
-Turborepo monorepo transitioning from SolidJS to Next.js 16+ with React Server Components. Currently has working Next.js app with SSE real-time sync, Zustand state management, and ai-elements chat UI.
+Turborepo monorepo transitioning from SolidJS to Next.js 16+ with React Server Components. Uses effect-atom based reactive World Stream for state management, with ai-elements chat UI.
+
+**Architecture Philosophy:**
+- **Core owns computation, React binds UI** - Smart boundary pattern (ADR-016)
+- **World Stream is THE API** - Push-based reactive state via `createWorldStream()` (ADR-018)
+- **Router is DELETED** - 4,377 LOC removed, it was solving the wrong problem
 
 **Why Next.js 16?**
 - Flat RSC hierarchy (eliminates 13+ nested providers)
@@ -267,34 +272,80 @@ Instance.provide({ directory: "/path" }, async () => {
 });
 ```
 
-### SSE Real-Time Sync Architecture
+### Reactive World Stream Architecture (ADR-018)
 
-**Event-driven state management with jotai atoms + Core API.**
+**Push-based state management with effect-atom. Core derives ALL state, emits complete consistent world snapshots.**
 
 ```
-SSE events → atom invalidation → Core API refetch → useMemo → React.memo → render
+SSE events → effect-atom invalidation → derived world state → consumers
 ```
 
-**Key Files:**
-- `packages/react/src/hooks/internal/use-sse.ts` - SSE connection, atom invalidation
-- `packages/react/src/hooks/internal/use-messages-with-parts.ts` - Messages hook with useMemo
-- `packages/core/src/api/*.ts` - Core API for data fetching
-- `apps/web/src/components/ai-elements/task.tsx` - `React.memo` optimization
-
-**Architecture:**
+**The API - `createWorldStream()`:**
 
 ```typescript
-// No client-side store - hooks call Core API directly
-// Atoms track SSE connection state and trigger refetch
-export function useMessagesWithParts(sessionId: string): OpencodeMessage[] {
-  const messages = useOpencodeStore((state) => state.directories[dir]?.messages[sessionId])
-  const partsMap = useOpencodeStore((state) => state.directories[dir]?.parts)
-  
-  return useMemo(() => {
-    return messages.map(msg => ({ info: msg, parts: partsMap?.[msg.id] ?? [] }))
-  }, [messages, partsMap])
+import { createWorldStream } from "@opencode-vibe/core/world"
+
+const stream = createWorldStream({
+  baseUrl: "http://localhost:3000",
+  directory: "/path/to/project"
+})
+
+// Subscribe pattern (React)
+const unsubscribe = stream.subscribe((world) => {
+  console.log(world.sessions, world.activeSessionCount)
+})
+
+// Async iterator pattern (CLI/TUI)
+for await (const world of stream) {
+  render(world)
 }
+
+// One-shot snapshot
+const world = await stream.getSnapshot()
 ```
+
+**Key Principle:** Core pushes complete world state; consumers just subscribe. No coordination burden on clients.
+
+**Key Files:**
+- `packages/core/src/world/*.ts` - World stream, atoms, derivation
+- `packages/react/src/hooks/use-world.ts` - React binding (calls Core promise APIs)
+- `packages/core/src/sse/*.ts` - SSE connection feeds atoms
+
+### Core Layer Responsibility (ADR-016)
+
+**Core owns computation, React binds UI.** This is the smart boundary pattern.
+
+```
+┌─────────────────────────────────────────┐
+│  REACT LAYER (lean)                     │
+│  • UI binding only                      │
+│  • Hooks call Core promise APIs         │
+│  • NEVER imports Effect                 │
+└─────────────────────────────────────────┘
+              ▼
+┌─────────────────────────────────────────┐
+│  CORE (smart boundary)                  │
+│  • Computed APIs (pre-joined data)      │
+│  • Effect services (internal)           │
+│  • Domain logic, status computation     │
+│  • Promise APIs (external surface)      │
+└─────────────────────────────────────────┘
+              ▼
+┌─────────────────────────────────────────┐
+│  SDK / BACKEND                          │
+└─────────────────────────────────────────┘
+```
+
+**What Core provides:**
+- `sessions.getStatus(id)` - Computed session status
+- `sessions.listWithStatus()` - Pre-joined data
+- `messages.listWithParts(sessionId)` - Messages with parts embedded
+- `format.relativeTime()`, `format.tokens()` - Formatting utils
+
+**What React provides:**
+- UI binding via hooks (`useWorld()`, `useSession(id)`)
+- Never imports Effect types
+- Zustand only for UI-local state (selected session, flags)
 
 ### OpenAPI SDK Codegen
 
@@ -310,39 +361,6 @@ OpenAPI Spec (openapi.json) → @hey-api/openapi-ts → Generated Types/Client
 ---
 
 ## Known Gotchas
-
-### Zustand Store Pattern (CRITICAL)
-
-**`useOpencodeStore()` returns a new reference on every render.** This causes infinite loops when used in useEffect/useCallback dependencies.
-
-```typescript
-// ❌ BAD - Causes infinite network requests
-const store = useOpencodeStore();
-useEffect(() => {
-  store.initDirectory(directory);
-}, [directory, store]); // store changes every render → infinite loop
-
-// ✅ GOOD - Use getState() for actions inside effects
-useEffect(() => {
-  useOpencodeStore.getState().initDirectory(directory);
-}, [directory]);
-
-// ✅ GOOD - Helper function pattern
-const getStoreActions = () => useOpencodeStore.getState();
-useEffect(() => {
-  getStoreActions().initDirectory(directory);
-}, [directory]);
-```
-
-**The Rule:**
-- Use `getState()` for **actions** inside effects/callbacks (stable reference)
-- Use the hook return value only for **selectors** (subscribing to state changes)
-
-**Files that follow this pattern:**
-- `apps/web/src/react/provider.tsx` - Uses `getStoreActions()` helper
-- `apps/web/src/react/use-multi-server-sse.ts` - Uses `getState()` in callback
-- `apps/web/src/app/projects-list.tsx` - Uses `getState()` in async functions
-- `apps/web/src/app/session/[id]/session-layout.tsx` - Uses `getState()` in useEffect
 
 ### Immer + React.memo
 
@@ -396,6 +414,8 @@ export const Task = React.memo(TaskComponent, (prev, next) => {
 ### Documentation
 
 - [ADR 001: Next.js Rebuild](docs/adr/001-nextjs-rebuild.md) - Full architecture rationale
+- [ADR 016: Core Layer Responsibility](docs/adr/016-core-layer-responsibility.md) - Smart boundary pattern
+- [ADR 018: Reactive World Stream](docs/adr/018-reactive-world-stream.md) - Push-based state with effect-atom
 - [Bun API Docs](node_modules/bun-types/docs/) - Local Bun reference
 - [Next.js Docs](https://nextjs.org/docs) - Next.js 16 App Router
 - [ai-elements](https://github.com/vercel-labs/ai-elements) - Chat UI components

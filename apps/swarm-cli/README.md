@@ -1,6 +1,12 @@
-# World Stream Visualizer
+# Swarm CLI
 
-Terminal visualizer for OpenCode session data via SSE streaming.
+Terminal interface for OpenCode session visualization and swarm coordination.
+
+```
+╔═══════════════════════════════════════╗
+║     🐝 SWARM CLI 🐝                   ║
+╚═══════════════════════════════════════╝
+```
 
 ## Features
 
@@ -10,43 +16,35 @@ Terminal visualizer for OpenCode session data via SSE streaming.
 - 🎨 Gradient color-coded sessions
 - ⚡ Streaming message indicators
 - 🖥️ Both visual and JSON output modes
+- 🔍 Auto-discovery of running servers
 
 ## Quick Start
 
-### With Mock Backend (Testing)
-
-1. Start the mock server:
 ```bash
-cd apps/world-viz
-bun run dev:mock
+# Auto-discover and connect
+swarm-cli status
+
+# With specific server
+swarm-cli status --url http://localhost:3000
+
+# Live watch mode
+swarm-cli watch
 ```
 
-2. In another terminal, run the visualizer:
-```bash
-cd apps/world-viz
-bun run dev
-```
-
-### With Real OpenCode Backend
-
-1. Ensure you have the OpenCode backend running on `localhost:1999` (or custom port)
-
-2. Run the visualizer:
-```bash
-cd apps/world-viz
-bun run dev
-
-# Or connect to custom URL:
-bun run dev -- --url http://localhost:3000
-```
-
-## Usage
+## Commands
 
 ```bash
-world-viz                    # Visual mode (default)
-world-viz --json             # JSON output mode
-world-viz --url <url>        # Custom backend URL (default: http://localhost:1999)
-world-viz --help             # Show help
+# Status - show current world state
+swarm-cli status              # Visual mode
+swarm-cli status --json       # JSON output
+
+# Watch - live updates
+swarm-cli watch               # Live terminal UI
+swarm-cli watch --json        # JSON stream
+
+# Options
+--url <url>                   # Custom backend URL
+--help                        # Show help
 ```
 
 ## Display Output
@@ -62,6 +60,35 @@ The visualizer shows:
   - Title and directory
   - Message count, context %, and status
   - Streaming indicators for active messages
+
+## Architecture
+
+Uses `createWorldStream` from `@opencode-vibe/core/world`:
+
+```
+OpenCode Backend → SSE Events → WorldStore (atoms) → CLI render
+```
+
+Key points:
+- Uses `createWorldStream().subscribe()` for live updates
+- Uses `adaptCoreWorldState()` to convert Core WorldState to CLI format
+- Auto-discovers servers via `discoverServers()`
+
+## Progressive Discovery
+
+The CLI implements progressive discovery (ADR-018):
+
+- **Auto-discovery**: Scans common ports (1999, 3000, 3001) for running servers
+- **Fallback chains**: Falls back gracefully when servers aren't found
+- **Error messages that teach**: Connection errors include troubleshooting tips
+- **Contextual hints**: Shows "what you can do next" based on current state
+
+Example discovery flow:
+```
+1. Check --url flag (explicit override)
+2. Scan default ports for OpenCode servers
+3. Report found servers or show startup instructions
+```
 
 ## Development
 
@@ -95,19 +122,7 @@ The CLI includes comprehensive error handling:
 - Graceful shutdown on Ctrl+C
 - Network error recovery with auto-reconnect
 
-## Architecture
-
-Built on top of `@opencode-vibe/core/world`:
-- `WorldStore` - Binary search-based state management
-- `createWorldStream()` - SSE consumer with async iterator API
-- `MultiServerSSE` - Multi-server discovery and routing
-
 ## Technical Details
-
-### Type Errors Fixed
-
-- Added non-null assertions for `COLORS` array access
-- Fixed all TypeScript strict mode errors in `render.ts`
 
 ### Backend Integration
 

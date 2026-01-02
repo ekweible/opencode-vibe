@@ -538,4 +538,147 @@ describe("worldAtom - Derived State", () => {
 			expect(enrichedSession.messages.map((m) => m.id)).toEqual(["msg-1", "msg-2", "msg-3"])
 		})
 	})
+
+	describe("Directory Grouping", () => {
+		it("should group sessions by directory", () => {
+			const session1 = createSession({ id: "session-1", directory: "/project-a" })
+			const session2 = createSession({ id: "session-2", directory: "/project-b" })
+			const session3 = createSession({ id: "session-3", directory: "/project-a" })
+
+			registry.set(sessionsAtom, [session1, session2, session3])
+			registry.set(messagesAtom, [])
+			registry.set(partsAtom, [])
+			registry.set(statusAtom, {
+				"session-1": "completed",
+				"session-2": "running",
+				"session-3": "completed",
+			})
+			registry.set(connectionStatusAtom, "connected")
+
+			const world = registry.get(worldAtom)
+
+			expect(world.byDirectory).toBeInstanceOf(Map)
+			expect(world.byDirectory.size).toBe(2)
+
+			const projectA = world.byDirectory.get("/project-a")
+			expect(projectA).toBeDefined()
+			expect(projectA).toHaveLength(2)
+			expect(projectA?.map((s) => s.id)).toContain("session-1")
+			expect(projectA?.map((s) => s.id)).toContain("session-3")
+
+			const projectB = world.byDirectory.get("/project-b")
+			expect(projectB).toBeDefined()
+			expect(projectB).toHaveLength(1)
+			expect(projectB?.[0].id).toBe("session-2")
+		})
+
+		it("should handle sessions with same directory", () => {
+			const session1 = createSession({
+				id: "session-1",
+				directory: "/same",
+				time: { created: 1000, updated: 3000 },
+			})
+			const session2 = createSession({
+				id: "session-2",
+				directory: "/same",
+				time: { created: 1000, updated: 2000 },
+			})
+
+			registry.set(sessionsAtom, [session1, session2])
+			registry.set(messagesAtom, [])
+			registry.set(partsAtom, [])
+			registry.set(statusAtom, {
+				"session-1": "completed",
+				"session-2": "completed",
+			})
+			registry.set(connectionStatusAtom, "connected")
+
+			const world = registry.get(worldAtom)
+
+			const sameSessions = world.byDirectory.get("/same")
+			expect(sameSessions).toHaveLength(2)
+			// Should be sorted by lastActivityAt descending
+			expect(sameSessions?.map((s) => s.id)).toEqual(["session-1", "session-2"])
+		})
+
+		it("should return empty map when no sessions exist", () => {
+			registry.set(sessionsAtom, [])
+			registry.set(messagesAtom, [])
+			registry.set(partsAtom, [])
+			registry.set(statusAtom, {})
+			registry.set(connectionStatusAtom, "disconnected")
+
+			const world = registry.get(worldAtom)
+
+			expect(world.byDirectory).toBeInstanceOf(Map)
+			expect(world.byDirectory.size).toBe(0)
+		})
+	})
+
+	describe("Stats Computation", () => {
+		it("should compute basic stats", () => {
+			const session1 = createSession({ id: "session-1" })
+			const session2 = createSession({ id: "session-2" })
+			const session3 = createSession({ id: "session-3" })
+
+			registry.set(sessionsAtom, [session1, session2, session3])
+			registry.set(messagesAtom, [])
+			registry.set(partsAtom, [])
+			registry.set(statusAtom, {
+				"session-1": "running",
+				"session-2": "completed",
+				"session-3": "running",
+			})
+			registry.set(connectionStatusAtom, "connected")
+
+			const world = registry.get(worldAtom)
+
+			expect(world.stats).toBeDefined()
+			expect(world.stats.total).toBe(3)
+			expect(world.stats.active).toBe(2)
+			expect(world.stats.streaming).toBe(0) // No streaming messages yet
+		})
+
+		it("should count streaming sessions", () => {
+			const session1 = createSession({ id: "session-1" })
+			const session2 = createSession({ id: "session-2" })
+			const message1 = createMessage({
+				id: "msg-1",
+				sessionID: "session-1",
+				role: "assistant",
+				time: { created: 1500 }, // No completed time = streaming
+			})
+
+			registry.set(sessionsAtom, [session1, session2])
+			registry.set(messagesAtom, [message1])
+			registry.set(partsAtom, [])
+			registry.set(statusAtom, {
+				"session-1": "running",
+				"session-2": "completed",
+			})
+			registry.set(connectionStatusAtom, "connected")
+
+			const world = registry.get(worldAtom)
+
+			expect(world.stats.total).toBe(2)
+			expect(world.stats.active).toBe(1)
+			expect(world.stats.streaming).toBe(1)
+		})
+
+		it("should return zero stats when no sessions exist", () => {
+			registry.set(sessionsAtom, [])
+			registry.set(messagesAtom, [])
+			registry.set(partsAtom, [])
+			registry.set(statusAtom, {})
+			registry.set(connectionStatusAtom, "disconnected")
+
+			const world = registry.get(worldAtom)
+
+			expect(world.stats).toEqual({
+				total: 0,
+				active: 0,
+				streaming: 0,
+			})
+		})
+	})
 })

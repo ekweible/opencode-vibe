@@ -103,3 +103,78 @@ Next steps:
 ${steps.map((step) => `  ${step}`).join("\n")}
 `
 }
+
+/**
+ * SSE event info (for logging/debugging)
+ */
+export interface SSEEventInfo {
+	type: string
+	properties: Record<string, unknown>
+}
+
+/**
+ * Format timestamp as HH:MM:SS
+ */
+function formatTimestamp(date: Date): string {
+	const hours = String(date.getHours()).padStart(2, "0")
+	const minutes = String(date.getMinutes()).padStart(2, "0")
+	const seconds = String(date.getSeconds()).padStart(2, "0")
+	return `${hours}:${minutes}:${seconds}`
+}
+
+/**
+ * Extract key identifiers from event properties
+ */
+function extractIdentifiers(event: SSEEventInfo): string {
+	const { type, properties } = event
+
+	switch (type) {
+		case "session.created":
+		case "session.updated":
+		case "session.status": {
+			const sessionID = properties.sessionID as string | undefined
+			const status = properties.status as string | undefined
+			if (status) {
+				return `${sessionID} → ${status}`
+			}
+			return sessionID || ""
+		}
+
+		case "message.created":
+		case "message.updated": {
+			const sessionID = properties.sessionID as string | undefined
+			const messageID = properties.id as string | undefined
+			const tokens = properties.totalTokens as number | undefined
+			const path = `${sessionID}/${messageID}`
+			if (tokens !== undefined) {
+				return `${path} (tokens: ${tokens})`
+			}
+			return path
+		}
+
+		case "part.created":
+		case "part.updated": {
+			const sessionID = properties.sessionID as string | undefined
+			const messageID = properties.messageID as string | undefined
+			const partID = properties.id as string | undefined
+			return `${sessionID}/${messageID}/${partID}`
+		}
+
+		default:
+			return JSON.stringify(properties)
+	}
+}
+
+/**
+ * Format a single SSE event for display
+ *
+ * Format: "HH:MM:SS event.type        identifier info"
+ * Example: "18:45:32 session.status    ses_abc123 → running"
+ */
+export function formatSSEEvent(event: SSEEventInfo): string {
+	const timestamp = formatTimestamp(new Date())
+	const eventType = event.type.padEnd(18, " ")
+	const identifiers = extractIdentifiers(event)
+
+	return `${timestamp} ${eventType} ${identifiers}`
+}

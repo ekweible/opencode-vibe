@@ -1,6 +1,33 @@
 # @opencode-vibe/react
 
-React hooks and providers for OpenCode — a type-safe interface to the OpenCode AI coding assistant.
+React bindings for OpenCode — a thin layer connecting Core APIs to UI components.
+
+## Philosophy
+
+**Core owns computation. React binds UI.**
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      React Layer                            │
+│  - Hooks consume from World Stream                          │
+│  - Components render state                                  │
+│  - UI state in Zustand (selected session, flags)            │
+│  - NO business logic, NO data derivation                    │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│                      Core Layer                             │
+│  - World Stream (push-based reactive state)                 │
+│  - Status computation, data derivation                      │
+│  - Promise APIs for mutations                               │
+│  - Effect runtime (internal)                                │
+└─────────────────────────────────────────────────────────────┘
+```
+
+React hooks call Core promise APIs. They never import Effect directly. All business logic lives in Core — React just binds it to the DOM.
+
+See [@opencode-vibe/core](../core/README.md) for details on the World Stream architecture.
 
 ## Install
 
@@ -15,69 +42,101 @@ bun add @opencode-vibe/react
 Wrap your app with `OpencodeProvider`:
 
 ```tsx
-import { OpencodeProvider } from "@opencode-vibe/react/providers";
+import { OpencodeProvider } from "@opencode-vibe/react/providers"
 
 export default function RootLayout({ children }) {
   return (
-    <OpencodeProvider>
+    <OpencodeProvider baseUrl="http://localhost:3000">
       {children}
     </OpencodeProvider>
-  );
+  )
 }
 ```
 
-Use hooks in your components:
+Use hooks to consume world state:
 
 ```tsx
-import { useSession, useSendMessage } from "@opencode-vibe/react";
+import { useWorld, useSession, useSessionMessages } from "@opencode-vibe/react"
 
 export function ChatUI({ sessionId }: { sessionId: string }) {
-  const session = useSession({ sessionId });
-  const { sendMessage, isLoading } = useSendMessage();
+  // Get entire world state (rarely needed)
+  const world = useWorld()
+
+  // Get specific session (derived from world)
+  const session = useSession(sessionId)
+
+  // Get messages for session
+  const messages = useSessionMessages(sessionId)
 
   return (
     <div>
-      <h1>{session.data?.title}</h1>
-      {/* ... */}
+      <h1>{session?.title}</h1>
+      {messages.map((msg) => (
+        <Message key={msg.id} message={msg} />
+      ))}
     </div>
-  );
+  )
 }
 ```
 
 ## Hooks
 
-### Data Fetching
-- `useSession(options)` — Unified facade for session data, messages, and status
-- `useSessionList()` — List of sessions
-- `useSessionData(sessionId)` — Session metadata
+### World Stream (Primary)
+
+Hooks that consume from the reactive World Stream:
+
+- `useWorld()` — Entire world state (use sparingly)
+- `useSession(sessionId)` — Single session data
+- `useSessionMessages(sessionId)` — Messages for a session
+- `useSessionList()` — All sessions
 - `useProjects()` — Available projects
 - `useCurrentProject()` — Active project
-- `useServers()` — Discovery and connection to OpenCode servers
-- `useProviders()` — Available AI providers and models
+- `useProviders()` — AI providers and models
+- `useServers()` — OpenCode server discovery
 
 ### Actions
-- `useSendMessage(options)` — Send messages to AI
+
+Mutations call Core promise APIs:
+
+- `useSendMessage()` — Send messages to AI
 - `useCreateSession()` — Create new sessions
-- `useCommands(options)` — Execute slash commands
+- `useCommands()` — Execute slash commands
 
 ### Utilities
+
 - `useFileSearch(options)` — Fuzzy file search
 - `useContextUsage()` — Token usage tracking
 - `useSubagents()` — Subagent task management
 
-## Providers
-
-- `OpencodeProvider` — Root provider for OpenCode context
-- `SSEProvider` — Server-Sent Events for real-time updates
-
-## Store
-
-Direct store access (Zustand-based):
+## Provider
 
 ```tsx
-import { useOpencodeStore } from "@opencode-vibe/react/store";
+import { OpencodeProvider } from "@opencode-vibe/react/providers"
 
-const messages = useOpencodeStore((state) => state.messages);
+<OpencodeProvider baseUrl="http://localhost:3000">
+  {children}
+</OpencodeProvider>
+```
+
+The provider:
+- Creates the World Stream connection
+- Manages SSE internally (no separate SSEProvider needed)
+- Provides context for all hooks
+
+## Store (UI State Only)
+
+Zustand is used for **UI state only**, not world data:
+
+```tsx
+import { useOpencodeStore } from "@opencode-vibe/react/store"
+
+// UI state - selection, flags, preferences
+const selectedSessionId = useOpencodeStore((state) => state.selectedSessionId)
+const setSelectedSession = useOpencodeStore((state) => state.setSelectedSession)
+
+// NOT for world data - use hooks instead
+// Bad:  useOpencodeStore((state) => state.messages)
+// Good: useSessionMessages(sessionId)
 ```
 
 ## SSR Plugin (Next.js)
@@ -86,22 +145,22 @@ Provider-free architecture for server components:
 
 ```tsx
 // next.config.ts
-import { OpencodeSSRPlugin } from "@opencode-vibe/react";
+import { OpencodeSSRPlugin } from "@opencode-vibe/react"
 
 export default {
   plugins: [OpencodeSSRPlugin({ apiUrl: process.env.OPENCODE_API_URL })],
-};
+}
 ```
 
 ```tsx
 // app/layout.tsx
-import { generateOpencodeHelpers } from "@opencode-vibe/react";
+import { generateOpencodeHelpers } from "@opencode-vibe/react"
 
-const { useSession } = generateOpencodeHelpers();
+const { useSession } = generateOpencodeHelpers()
 ```
 
 ## Dependencies
 
-- `@opencode-vibe/core` — Core SDK and types
-- `zustand` — State management
-- `immer` — Immutable updates
+- `@opencode-vibe/core` — World Stream, APIs, business logic
+- `effect-atom` — Reactive state binding
+- `zustand` — UI state only

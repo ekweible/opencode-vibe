@@ -8,62 +8,52 @@
 import { createWorldStream } from "@opencode-vibe/core/world"
 import type { CommandContext } from "./index.js"
 import { write, withLinks } from "../output.js"
-import { discoverServers } from "../discovery.js"
 import { adaptCoreWorldState, formatWorldState } from "../world-state.js"
 
 export async function run(context: CommandContext): Promise<void> {
 	const { output } = context
 
-	// Discover servers first to check if any are running
-	const servers = await discoverServers()
-
-	if (servers.length === 0) {
-		if (output.mode === "json") {
-			const data = withLinks(
-				{ servers: 0, discovered: [], world: null },
-				{
-					start: "cd ~/project && opencode",
-					retry: "swarm-cli status",
-				},
-			)
-			write(output, data)
-		} else {
-			console.log("✗ No OpenCode servers found")
-			console.log("\nTo connect to a server:")
-			console.log("  1. Start OpenCode:  cd ~/project && opencode")
-			console.log("  2. Then run:        swarm-cli status")
-			console.log("\nTIP: OpenCode must be running in a project directory")
-		}
-		return
-	}
-
 	if (output.mode === "pretty") {
-		console.log(`🔍 Discovering world state from ${servers.length} server(s)...\n`)
+		console.log("🔍 Discovering servers...\n")
 	}
 
-	// Use createWorldStream - it bootstraps with full data and wires SSE
-	// For status command, we just need a snapshot, not live streaming
-	const stream = createWorldStream({
-		baseUrl: `http://127.0.0.1:${servers[0]!.port}`,
-	})
+	// Create world stream - it handles discovery and SSE internally
+	const stream = createWorldStream()
 
 	try {
 		// Wait a moment for bootstrap to complete
-		await new Promise((resolve) => setTimeout(resolve, 500))
+		await new Promise((resolve) => setTimeout(resolve, 1000))
 
 		// Get snapshot
 		const coreState = await stream.getSnapshot()
 		const world = adaptCoreWorldState(coreState)
 
+		// Check if we found any sessions
+		if (world.totalSessions === 0) {
+			if (output.mode === "json") {
+				const data = withLinks(
+					{ servers: 0, discovered: [], world: null },
+					{
+						start: "cd ~/project && opencode",
+						retry: "swarm-cli status",
+					},
+				)
+				write(output, data)
+			} else {
+				console.log("✗ No OpenCode servers found")
+				console.log("\nTo connect to a server:")
+				console.log("  1. Start OpenCode:  cd ~/project && opencode")
+				console.log("  2. Then run:        swarm-cli status")
+				console.log("\nTIP: OpenCode must be running in a project directory")
+			}
+			await stream.dispose()
+			return
+		}
+
 		if (output.mode === "json") {
 			const data = withLinks(
 				{
-					servers: servers.length,
-					discovered: servers.map((s) => ({
-						port: s.port,
-						pid: s.pid,
-						directory: s.directory,
-					})),
+					servers: world.projects.length,
 					world: {
 						projects: world.projects.map((p) => ({
 							directory: p.directory,
@@ -86,7 +76,6 @@ export async function run(context: CommandContext): Promise<void> {
 				{
 					watch: "swarm-cli watch",
 					watchLive: "swarm-cli watch --cursor-file .cursor",
-					filter: "swarm-cli status --project <path>",
 				},
 			)
 			write(output, data)
