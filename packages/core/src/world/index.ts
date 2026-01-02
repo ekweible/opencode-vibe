@@ -68,3 +68,7 @@ export type { MergedStreamConfig, MergedStreamHandle } from "./merged-stream.js"
 // Metrics endpoint (Prometheus exposition format)
 export { formatPrometheusMetrics } from "./metrics-endpoint.js"
 export type { MetricSnapshot } from "./metrics-endpoint.js"
+
+// OpenTelemetry integration (Effect Layer)
+export { OTelService, OTelServiceLive, makeOTelServiceLive } from "./otel.js"
+export type { OTelConfig } from "./otel.js"
