@@ -9,6 +9,8 @@
 
 import { writeFile, readFile } from "fs/promises"
 import { existsSync } from "fs"
+import type { SSEEventInfo } from "@opencode-vibe/core/world"
+export type { SSEEventInfo }
 
 export type OutputMode = "json" | "pretty"
 
@@ -105,14 +107,6 @@ ${steps.map((step) => `  ${step}`).join("\n")}
 }
 
 /**
- * SSE event info (for logging/debugging)
- */
-export interface SSEEventInfo {
-	type: string
-	properties: Record<string, unknown>
-}
-
-/**
  * Format timestamp as HH:MM:SS
  */
 function formatTimestamp(date: Date): string {
@@ -168,13 +162,14 @@ function extractIdentifiers(event: SSEEventInfo): string {
 /**
  * Format a single SSE event for display
  *
- * Format: "HH:MM:SS event.type        identifier info"
- * Example: "18:45:32 session.status    ses_abc123 → running"
+ * Format: "[source] HH:MM:SS event.type        identifier info"
+ * Example: "[sse] 18:45:32 session.status    ses_abc123 → running"
  */
 export function formatSSEEvent(event: SSEEventInfo): string {
 	const timestamp = formatTimestamp(new Date())
 	const eventType = event.type.padEnd(18, " ")
 	const identifiers = extractIdentifiers(event)
+	const sourceTag = event.source ? `[${event.source}]` : "[sse]"
 
-	return `${timestamp} ${eventType} ${identifiers}`
+	return `${sourceTag} ${timestamp} ${eventType} ${identifiers}`
 }

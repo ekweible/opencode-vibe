@@ -45,9 +45,14 @@ export class WorldStore {
 
 	/**
 	 * Subscribe to world state changes
+	 *
+	 * Fires immediately with current state, then on each change.
+	 * Pattern: BehaviorSubject-like - subscribers always see current state.
 	 */
 	subscribe(callback: WorldSubscriber): () => void {
 		this.subscribers.add(callback)
+		// Fire immediately with current state (like React useState)
+		callback(this.getState())
 		return () => this.subscribers.delete(callback)
 	}
 

@@ -15,6 +15,7 @@ import type { Message, Part, Session } from "../types/domain.js"
 import type { SessionStatus } from "../types/events.js"
 import { normalizeBackendStatus, type BackendSessionStatus } from "../types/sessions.js"
 import { WorldStore } from "./atoms.js"
+import type { SSEEventInfo } from "./types.js"
 
 // ============================================================================
 // Types
@@ -41,7 +42,7 @@ export interface WorldSSEConfig {
 	/** Max reconnect attempts (default: 10) */
 	maxReconnectAttempts?: number
 	/** Callback for raw SSE events (for logging/debugging) */
-	onEvent?: (event: SSEEvent) => void
+	onEvent?: (event: SSEEventInfo) => void
 }
 
 // ============================================================================
@@ -462,7 +463,12 @@ export class WorldSSE {
 		const { type, properties } = event
 
 		// Call the event callback for logging/debugging
-		this.config.onEvent(event)
+		// Add source tag for multi-source scenarios
+		this.config.onEvent({
+			source: "sse",
+			type,
+			properties,
+		})
 
 		switch (type) {
 			case "session.created":
