@@ -1,6 +1,5 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 1,
   "workspaces": {
     "": {
       "name": "opencode-next",
@@ -140,7 +139,7 @@
         "zustand": "^5.0.0",
       },
       "devDependencies": {
-        "@opencode-ai/sdk": "^1.0.209",
+        "@opencode-ai/sdk": "1.0.224",
         "@testing-library/dom": "^10.4.1",
         "@testing-library/react": "^16.3.1",
         "@types/react": "^19",
@@ -501,7 +500,7 @@
 
     "@open-draft/until": ["@open-draft/until@2.1.0", "", {}, "sha512-U69T3ItWHvLwGg5eJ0n3I62nWuE6ilHlmz7zM0npLBRvPRd7e6NYmg54vvRtP5mZG7kZqZCFVdsTWo7BPtBujg=="],
 
-    "@opencode-ai/sdk": ["@opencode-ai/sdk@1.0.209", "", {}, "sha512-WUyuyURyN391tbfdct3/qj7JNOGNyK36AIHdlPJz6s0nmETcASmOMCDUhI/VgUc0noNOVKAulPq1RMssVVi78g=="],
+    "@opencode-ai/sdk": ["@opencode-ai/sdk@1.0.224", "", {}, "sha512-gODyWLDTaz38qISxRdJKsEiFqvJNcFzu4/awoSICIl8j8gx6qDxLsYWVp/ToO4LKXTvHMn8yyZpM3ZEdGhDC+g=="],
 
     "@opencode-vibe/core": ["@opencode-vibe/core@workspace:packages/core"],
 

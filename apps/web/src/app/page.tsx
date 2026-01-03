@@ -85,9 +85,15 @@ function isRealProject(project: Project): boolean {
  */
 async function getProjectsWithSessions(): Promise<ProjectWithSessions[]> {
 	// 1. Get all projects (globalClientSSR is Promise<OpencodeClient>)
-	const client = await globalClientSSR
-	const projectsResponse = await client.project.list()
-	const allProjects = (projectsResponse.data || []) as Project[]
+	let allProjects: Project[] = []
+	try {
+		const client = await globalClientSSR
+		const projectsResponse = await client.project.list()
+		allProjects = (projectsResponse.data || []) as Project[]
+	} catch {
+		// No backend running - return empty list (dashboard shows "no projects" state)
+		return []
+	}
 
 	// Date.now() must come AFTER uncached data access (Next.js 16 prerender requirement)
 	const now = Date.now()

@@ -19,8 +19,8 @@ import {
 } from "@opencode-vibe/react"
 import { SSEDebugPanel } from "@/components/sse-debug-panel"
 
-// Session status type (extracted from SSE event payload)
-type SessionStatusValue = "running" | "pending" | "completed" | "error"
+// Session status type (from core SessionStatus)
+type SessionStatusValue = "running" | "pending" | "completed" | "error" | "idle"
 
 interface Project {
 	id: string

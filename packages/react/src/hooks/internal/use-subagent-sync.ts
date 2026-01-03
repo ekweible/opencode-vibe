@@ -117,41 +117,37 @@ export function useSubagentSync(options: UseSubagentSyncOptions): void {
 		}
 
 		// Handle message events
-		if (type === "message.created") {
-			const message = properties as Message
+		// SDK uses "message.updated" for both create and update (no separate "message.created")
+		if (type === "message.updated") {
+			// Properties structure: { info: Message }
+			const message = (properties as { info: Message }).info
 
 			// Only process messages from registered subagents
 			subagents.getSessions(stateRef.current).then((sessions) => {
 				if (!sessions[message.sessionID]) {
 					return // Ignore unregistered sessions
 				}
+
+				const isNew = !messageToSessionMap.current.has(message.id)
 
 				// Track message-to-session mapping
 				messageToSessionMap.current.set(message.id, message.sessionID)
-				void subagents.addMessage(stateRef.current!, message.sessionID, message)
 
-				// Flush any pending parts for this message
-				flushPendingParts(message.id, message.sessionID)
-			})
-		} else if (type === "message.updated") {
-			const message = properties as Message
-
-			// Only process messages from registered subagents
-			subagents.getSessions(stateRef.current).then((sessions) => {
-				if (!sessions[message.sessionID]) {
-					return // Ignore unregistered sessions
+				if (isNew) {
+					void subagents.addMessage(stateRef.current!, message.sessionID, message)
+					// Flush any pending parts for this message
+					flushPendingParts(message.id, message.sessionID)
+				} else {
+					void subagents.updateMessage(stateRef.current!, message.sessionID, message)
 				}
-
-				// Update mapping if needed
-				messageToSessionMap.current.set(message.id, message.sessionID)
-				void subagents.updateMessage(stateRef.current!, message.sessionID, message)
 			})
 		}
-		// Handle part events (note: event types are "message.part.created", not "part.created")
-		else if (type === "message.part.created") {
-			handlePartEvent(properties as Part, false)
-		} else if (type === "message.part.updated") {
-			handlePartEvent(properties as Part, true)
+		// Handle part events
+		// SDK uses "message.part.updated" for both create and update (no separate "message.part.created")
+		else if (type === "message.part.updated") {
+			// Properties structure: { part: Part, delta?: string }
+			const part = (properties as { part: Part }).part
+			handlePartEvent(part, false) // Treat as upsert
 		}
 	}, []) // Empty deps - uses refs for all values
 

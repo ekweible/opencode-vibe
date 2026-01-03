@@ -18,7 +18,13 @@
 import { useCallback, useEffect, useState, useRef, useMemo } from "react"
 import type { OpencodeConfig } from "./next-ssr-plugin"
 import { useOpencodeStore } from "./store"
-import type { Session, ContextUsage, CompactionState, SessionStatus } from "./store/types"
+import type {
+	Session,
+	ContextUsage,
+	CompactionState,
+	SessionStatus,
+	GlobalEvent,
+} from "./store/types"
 import { deriveSessionStatus, type DeriveSessionStatusOptions } from "./store/status-utils"
 import { useCommands as useCommandsBase } from "./hooks/use-commands"
 import { useSSE as useSSEBase } from "./hooks/internal/use-sse"
@@ -988,10 +994,8 @@ export function generateOpencodeHelpers<TRouter = any>(config?: OpencodeConfig) 
 				console.log("[useSSEEvents] Received event for", event.directory, ":", event.payload.type)
 
 				// Route to store (getState() for stable reference)
-				useOpencodeStore.getState().handleSSEEvent({
-					directory: event.directory,
-					payload: event.payload,
-				})
+				// Cast needed: SSE events have `type: string` but SDK GlobalEvent expects literal union
+				useOpencodeStore.getState().handleSSEEvent(event as GlobalEvent)
 			})
 
 			return () => {
