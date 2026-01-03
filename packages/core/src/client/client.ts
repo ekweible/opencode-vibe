@@ -182,14 +182,20 @@ export async function createClientSSR(
 	}
 
 	// Route using same logic as client-side createClient
+	// IMPORTANT: Use first available server as fallback (not hardcoded default)
+	// because the SDK sends x-opencode-directory header for cross-project queries
+	const fallbackUrl = servers[0]?.url ?? OPENCODE_URL
 	let serverUrl: string
 
 	if (sessionId && directory) {
-		serverUrl = getServerForSession(sessionId, directory, servers)
+		const matched = getServerForSession(sessionId, directory, servers)
+		// If routing returned the hardcoded default, use first available server instead
+		serverUrl = matched === "http://localhost:4056" ? fallbackUrl : matched
 	} else if (directory) {
-		serverUrl = getServerForDirectory(directory, servers)
+		const matched = getServerForDirectory(directory, servers)
+		serverUrl = matched === "http://localhost:4056" ? fallbackUrl : matched
 	} else {
-		serverUrl = servers[0]?.url ?? OPENCODE_URL
+		serverUrl = fallbackUrl
 	}
 
 	return createOpencodeClient({
@@ -251,6 +257,9 @@ async function discoverServersSSR(): Promise<ServerInfo[]> {
  * Global SSR client promise for use in server components
  * Use this for global operations (no directory scoping) in SSR
  *
+ * NOTE: This is a getter that creates fresh clients on each access.
+ * Server discovery is re-run each time to pick up new/removed servers.
+ *
  * @example
  * ```tsx
  * export default async function Page() {
@@ -260,4 +269,9 @@ async function discoverServersSSR(): Promise<ServerInfo[]> {
  * }
  * ```
  */
-export const globalClientSSR = createClientSSR()
+export const globalClientSSR: Promise<OpencodeClient> = {
+	then: (resolve, reject) => createClientSSR().then(resolve, reject),
+	catch: (reject) => createClientSSR().catch(reject),
+	finally: (fn) => createClientSSR().finally(fn),
+	[Symbol.toStringTag]: "Promise",
+} as Promise<OpencodeClient>

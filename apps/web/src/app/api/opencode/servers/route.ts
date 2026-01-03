@@ -54,7 +54,9 @@ async function verifyOpencodeServer(candidate: CandidatePort): Promise<Discovere
 		const project = await res.json()
 		const directory = project.worktree
 
-		if (!directory || directory === "/" || directory.length <= 1) {
+		// Accept global servers (worktree "/") - they contain sessions for all projects
+		// Only reject truly invalid responses
+		if (!directory) {
 			return null
 		}
 
